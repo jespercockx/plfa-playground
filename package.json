@@ -8,8 +8,7 @@
   "scripts": {
     "dev": "vite dev",
     "predev": "node scripts/sync-runtime.mjs && node scripts/sync-content.mjs",
-    "build": "node scripts/sync-runtime.mjs && node scripts/sync-content.mjs && vite build && node scripts/prepare-cloudflare-assets.mjs",
-    "deploy": "npm run build && wrangler deploy",
+    "build": "node scripts/sync-runtime.mjs && node scripts/sync-content.mjs && vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || true",
     "svelte-kit-sync": "svelte-kit sync && rm -f node_modules/.tmp/*.tsbuildinfo",
@@ -36,8 +35,7 @@
     "svelte-check": "^4.4.5",
     "typescript": "^5.9.3",
     "vite": "~8.2.2",
-    "vitest": "^4.1.11",
-    "wrangler": "^4.127.1"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20.19.0 <25.0.0"
@@ -63,7 +61,6 @@
     "zod": "^4.3.6"
   },
   "allowScripts": {
-    "esbuild@0.28.2": true,
-    "workerd@1.20261023.1": true
+    "esbuild@0.28.2": true
   }
 }
