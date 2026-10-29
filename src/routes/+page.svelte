@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { asset } from "$app/paths";
   import { SPSC } from "spsc";
   import { basicSetup } from "codemirror";
   import { startCompletion } from "@codemirror/autocomplete";
@@ -32,6 +33,7 @@
   } from "@lucide/svelte";
 
   import { AgdaController, LS_DOC_KEY } from "$lib/controller.svelte";
+  import { runtimeManifest } from "$lib/runtime-manifest";
   import { myCodeMirrorTheme } from "$lib/codemirror/theme";
   import { agdaCompletions } from "$lib/codemirror/completion";
   import { symbolInput } from "$lib/codemirror/symbol-input";
@@ -59,10 +61,10 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
 
   type CommandKind = "give" | "refine" | "case" | "infer" | "normalize";
   type InspectorMode = "goals" | "result" | "problems";
-  type WorkspaceMode = "playground" | "plfa";
+  type WorkspaceMode = "playground" | "content";
   type ActiveResource = "markdown" | "agda";
 
-  interface PlfaChapter {
+  interface ContentChapter {
     id: string;
     name: string;
     title: string;
@@ -70,20 +72,21 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     modulePath: string;
   }
 
-  interface PlfaGroup {
+  interface ContentGroup {
     id: string;
     title: string;
-    chapters: PlfaChapter[];
+    chapters: ContentChapter[];
   }
 
-  interface PlfaManifest {
+  interface ContentManifest {
     title: string;
     source: string;
     license: string;
-    groups: PlfaGroup[];
+    library: string;
+    groups: ContentGroup[];
   }
 
-  interface PlfaInterfaceManifest {
+  interface ContentInterfaceManifest {
     version: number;
     chapters: Record<string, string[]>;
   }
@@ -98,7 +101,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
       stdin: SPSC.allocateArrayBuffer(1024 * 1024),
       stdout: SPSC.allocateArrayBuffer(1024 * 1024),
     },
-    agdaVersion: "2.8.0",
+    agdaVersion: runtimeManifest[0].agdaVersion,
   });
   const sourceLanguageCompartment = new Compartment();
 
@@ -109,16 +112,16 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   let filesOpen = $state(true);
   let workspaceMode = $state<WorkspaceMode>("playground");
   let activeResource = $state<ActiveResource>("agda");
-  let plfaExpanded = $state(true);
-  let expandedGroups = $state<Record<string, boolean>>({ part1: true });
-  let plfaManifest = $state<PlfaManifest | null>(null);
-  let plfaInterfaceManifest = $state<PlfaInterfaceManifest | null>(null);
-  let plfaInterfaceManifestPromise: Promise<PlfaInterfaceManifest | null> | null =
+  let contentExpanded = $state(true);
+  let expandedGroups = $state<Record<string, boolean>>({});
+  let contentManifest = $state<ContentManifest | null>(null);
+  let contentInterfaceManifest = $state<ContentInterfaceManifest | null>(null);
+  let contentInterfaceManifestPromise: Promise<ContentInterfaceManifest | null> | null =
     null;
-  let selectedChapterId = $state("part1/Naturals");
-  let plfaMarkdown = $state("");
-  let plfaLoading = $state(false);
-  let plfaError = $state("");
+  let selectedChapterId = $state("");
+  let chapterMarkdown = $state("");
+  let chapterLoading = $state(false);
+  let chapterError = $state("");
   let commandKind = $state<CommandKind | null>(null);
   let commandValue = $state("");
   let actionError = $state("");
@@ -134,30 +137,30 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   let scrollSyncRelease: ReturnType<typeof setTimeout> | undefined;
   let chapterRequest = 0;
 
-  const plfaChapters = $derived(
-    plfaManifest?.groups.flatMap((group) => group.chapters) ?? [],
+  const contentChapters = $derived(
+    contentManifest?.groups.flatMap((group) => group.chapters) ?? [],
   );
   const selectedChapter = $derived(
-    plfaChapters.find((chapter) => chapter.id === selectedChapterId),
+    contentChapters.find((chapter) => chapter.id === selectedChapterId),
   );
   const selectedChapterIndex = $derived(
-    plfaChapters.findIndex((chapter) => chapter.id === selectedChapterId),
+    contentChapters.findIndex((chapter) => chapter.id === selectedChapterId),
   );
-  const plfaHtml = $derived(
-    plfaMarkdown ? renderPlfaMarkdown(plfaMarkdown) : "",
+  const chapterHtml = $derived(
+    chapterMarkdown ? renderChapterMarkdown(chapterMarkdown) : "",
   );
-  const plfaCodeBlocks = $derived.by(() => {
+  const chapterCodeBlocks = $derived.by(() => {
     const ranges: Array<{ from: number; to: number }> = [];
     const opening = /^```agda[^\n]*\n/gm;
-    for (const match of plfaMarkdown.matchAll(opening)) {
+    for (const match of chapterMarkdown.matchAll(opening)) {
       const from = (match.index ?? 0) + match[0].length;
-      const closing = plfaMarkdown.indexOf("\n```", from);
+      const closing = chapterMarkdown.indexOf("\n```", from);
       ranges.push({ from, to: closing < 0 ? from : closing });
     }
     return ranges;
   });
   const editorFileName = $derived(
-    workspaceMode === "plfa" && selectedChapter
+    workspaceMode === "content" && selectedChapter
       ? `${selectedChapter.name}.lagda.md`
       : "Main.agda",
   );
@@ -345,8 +348,8 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             inspectorPreference = "goals";
-            if (workspaceMode === "plfa")
-              plfaMarkdown = update.state.doc.toString();
+            if (workspaceMode === "content")
+              chapterMarkdown = update.state.doc.toString();
             if (saveTimer) clearTimeout(saveTimer);
             saveTimer = setTimeout(
               () => controller.persistDocument(update.state.doc.toString()),
@@ -428,15 +431,19 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     };
     window.addEventListener("keydown", globalKeydown, { capture: true });
 
-    void fetch("/content/manifest.json")
+    void fetch(asset("/content/manifest.json"))
       .then((response) => {
         if (!response.ok) throw new Error("Could not load the content index");
-        return response.json() as Promise<PlfaManifest>;
+        return response.json() as Promise<ContentManifest>;
       })
-      .then((manifest) => (plfaManifest = manifest))
-      .catch((error) => (plfaError = readableError(error)));
+      .then((manifest) => {
+        contentManifest = manifest;
+        expandedGroups = { [manifest.groups[0]?.id ?? ""]: true };
+        selectedChapterId = manifest.groups[0]?.chapters[0]?.id ?? "";
+      })
+      .catch((error) => (chapterError = readableError(error)));
 
-    void loadPlfaInterfaceManifest();
+    void loadContentInterfaceManifest();
 
     if (!crossOriginIsolated) {
       startupError =
@@ -449,25 +456,25 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     });
   });
 
-  function loadPlfaInterfaceManifest() {
-    if (plfaInterfaceManifestPromise) return plfaInterfaceManifestPromise;
-    plfaInterfaceManifestPromise = fetch(
-      "/content/interfaces/manifest.json?cache=dependency-closures-v1-20260831",
+  function loadContentInterfaceManifest() {
+    if (contentInterfaceManifestPromise) return contentInterfaceManifestPromise;
+    contentInterfaceManifestPromise = fetch(
+      `${asset("/content/interfaces/manifest.json")}?cache=dependency-closures-v1-20260831`,
     )
       .then((response) => {
         if (!response.ok)
           throw new Error("Could not load the content cache index");
-        return response.json() as Promise<PlfaInterfaceManifest>;
+        return response.json() as Promise<ContentInterfaceManifest>;
       })
       .then((manifest) => {
-        plfaInterfaceManifest = manifest;
+        contentInterfaceManifest = manifest;
         return manifest;
       })
       .catch(() => {
-        plfaInterfaceManifest = null;
+        contentInterfaceManifest = null;
         return null;
       });
-    return plfaInterfaceManifestPromise;
+    return contentInterfaceManifestPromise;
   }
 
   $effect(() => {
@@ -495,7 +502,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     return error instanceof Error ? error.message : String(error);
   }
 
-  function renderPlfaMarkdown(source: string) {
+  function renderChapterMarkdown(source: string) {
     let blockIndex = 0;
     const codeOffsets = [...source.matchAll(/^```agda[^\n]*\n/gm)].map(
       (match) => (match.index ?? 0) + match[0].length,
@@ -577,7 +584,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   }
 
   function scheduleScrollSync(origin: "reader" | "editor") {
-    if (workspaceMode !== "plfa" || !readerContent || !editor) return;
+    if (workspaceMode !== "content" || !readerContent || !editor) return;
     if (scrollSyncOwner && scrollSyncOwner !== origin) return;
     claimScrollSync(origin);
 
@@ -631,30 +638,30 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     }
   }
 
-  function plfaInterfaceUrls(chapter: PlfaChapter) {
-    const index = plfaChapters.findIndex(
+  function contentInterfaceUrls(chapter: ContentChapter) {
+    const index = contentChapters.findIndex(
       (candidate) => candidate.id === chapter.id,
     );
     if (index < 0) return [];
     const archives =
-      plfaInterfaceManifest?.chapters[chapter.id] ??
-      plfaChapters.slice(0, index + 1).map((candidate) => candidate.id);
+      contentInterfaceManifest?.chapters[chapter.id] ??
+      contentChapters.slice(0, index + 1).map((candidate) => candidate.id);
     return archives.map(
       (archive) =>
-        `/content/interfaces/${archive}.zip?cache=dependency-closures-v1-20260831`,
+        `${asset(`/content/interfaces/${archive}.zip`)}?cache=dependency-closures-v1-20260831`,
     );
   }
 
-  async function ensurePlfaInterfaces(chapter = selectedChapter) {
+  async function ensureContentInterfaces(chapter = selectedChapter) {
     if (!chapter) return Promise.resolve();
-    await loadPlfaInterfaceManifest();
-    await controller.mountDriveArchives(plfaInterfaceUrls(chapter));
+    await loadContentInterfaceManifest();
+    await controller.mountDriveArchives(contentInterfaceUrls(chapter));
   }
 
   function runCheck() {
     if (!compilerReady || isBusy) return true;
     void runAction(async () => {
-      if (workspaceMode === "plfa") await ensurePlfaInterfaces();
+      if (workspaceMode === "content") await ensureContentInterfaces();
       await controller.loadAgdaFile();
     });
     return true;
@@ -729,39 +736,39 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
       void runAction(() => controller.queryGoalType(id));
   }
 
-  async function openPlfaChapter(chapter: PlfaChapter) {
+  async function openContentChapter(chapter: ContentChapter) {
     if (isBusy) return;
     const request = ++chapterRequest;
-    workspaceMode = "plfa";
+    workspaceMode = "content";
     activeResource = "markdown";
     selectedChapterId = chapter.id;
     expandedGroups = {
       ...expandedGroups,
       [chapter.id.split("/")[0]]: true,
     };
-    plfaLoading = true;
-    plfaError = "";
+    chapterLoading = true;
+    chapterError = "";
 
     try {
-      const sourceResponse = await fetch(chapter.sourcePath);
+      const sourceResponse = await fetch(asset(chapter.sourcePath));
       if (!sourceResponse.ok) throw new Error(`Could not open ${chapter.name}`);
       const originalSource = await sourceResponse.text();
       if (request !== chapterRequest) return;
 
-      const storageKey = `agda-web-ide-beta:plfa-lagda:${chapter.id}`;
+      const storageKey = `agda-web-ide-beta:content:${chapter.id}`;
       const source = localStorage.getItem(storageKey) ?? originalSource;
-      plfaMarkdown = source;
+      chapterMarkdown = source;
       editor?.dispatch({
         effects: sourceLanguageCompartment.reconfigure(literateAgdaLanguage()),
       });
       controller.setDocument(source, chapter.modulePath, storageKey);
       readerContent?.scrollTo({ top: 0 });
       if (controller.driveIsCreated)
-        void runAction(() => ensurePlfaInterfaces(chapter));
+        void runAction(() => ensureContentInterfaces(chapter));
     } catch (error) {
-      if (request === chapterRequest) plfaError = readableError(error);
+      if (request === chapterRequest) chapterError = readableError(error);
     } finally {
-      if (request === chapterRequest) plfaLoading = false;
+      if (request === chapterRequest) chapterLoading = false;
     }
   }
 
@@ -787,15 +794,15 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   }
 
   function moveChapter(direction: -1 | 1) {
-    const chapter = plfaChapters[selectedChapterIndex + direction];
-    if (chapter) void openPlfaChapter(chapter);
+    const chapter = contentChapters[selectedChapterIndex + direction];
+    if (chapter) void openContentChapter(chapter);
   }
 
   function handleReaderClick(event: MouseEvent) {
     const target = event.target instanceof Element ? event.target : null;
     const sourceBlock = target?.closest<HTMLElement>("[data-agda-block]");
     if (sourceBlock) {
-      const range = plfaCodeBlocks[Number(sourceBlock.dataset.agdaBlock)];
+      const range = chapterCodeBlocks[Number(sourceBlock.dataset.agdaBlock)];
       if (!range || !editor) return;
       event.preventDefault();
       activeResource = "agda";
@@ -817,14 +824,14 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
       .split("/")
       .filter(Boolean)
       .at(-1);
-    const chapter = plfaChapters.find(
+    const chapter = contentChapters.find(
       (candidate) =>
         candidate.name.toLowerCase() === chapterName?.toLowerCase(),
     );
     if (!chapter) return;
 
     event.preventDefault();
-    void openPlfaChapter(chapter).then(() => {
+    void openContentChapter(chapter).then(() => {
       if (!fragment) return;
       setTimeout(() =>
         readerContent
@@ -851,7 +858,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   }
 </script>
 
-<svelte:head><title>Agda Playground — Agda in your browser</title></svelte:head>
+<svelte:head><title>{contentManifest?.title ?? "Agda Playground"}</title></svelte:head>
 
 <main class="app-shell" style={`--inspector-width: ${inspectorWidth}px`}>
   {#if startupError}<div class="fatal-banner">
@@ -860,7 +867,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
 
   <section
     class:files-closed={!filesOpen}
-    class:lesson-workspace={workspaceMode === "plfa"}
+    class:lesson-workspace={workspaceMode === "content"}
     class="workspace"
   >
     <aside class="activitybar" aria-label="Workspace navigation">
@@ -890,19 +897,21 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
         ></span></button
       >
       <button
-        class:open={plfaExpanded}
+        class:open={contentExpanded}
         class="tree-root tree-button"
-        onclick={() => (plfaExpanded = !plfaExpanded)}
-        aria-expanded={plfaExpanded}
+        onclick={() => (contentExpanded = !contentExpanded)}
+        aria-expanded={contentExpanded}
       >
-        {#if plfaExpanded}<ChevronDown size={13} />{:else}<ChevronRight
+        {#if contentExpanded}<ChevronDown size={13} />{:else}<ChevronRight
             size={13}
-          />{/if}<span>PLFA</span>
+          />{/if}<span
+          >{contentManifest?.library?.toUpperCase() ?? "CONTENT"}</span
+        >
       </button>
-      {#if plfaExpanded}
-        {#if plfaManifest}
-          <div class="plfa-tree">
-            {#each plfaManifest.groups as group}
+      {#if contentExpanded}
+        {#if contentManifest}
+          <div class="content-tree">
+            {#each contentManifest.groups as group}
               <button
                 class="tree-part"
                 onclick={() =>
@@ -922,10 +931,10 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
               {#if expandedGroups[group.id]}
                 {#each group.chapters as chapter}
                   <button
-                    class:active={workspaceMode === "plfa" &&
+                    class:active={workspaceMode === "content" &&
                       selectedChapterId === chapter.id}
                     class="chapter-row"
-                    onclick={() => void openPlfaChapter(chapter)}
+                    onclick={() => void openContentChapter(chapter)}
                     disabled={isBusy}
                     title={chapter.title}
                   >
@@ -935,8 +944,8 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
               {/if}
             {/each}
           </div>
-        {:else if plfaError}
-          <div class="tree-message error">{plfaError}</div>
+        {:else if chapterError}
+          <div class="tree-message error">{chapterError}</div>
         {:else}
           <div class="tree-message">
             <LoaderCircle size={13} class="spin" />Indexing
@@ -945,9 +954,9 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
       {/if}
     </aside>
 
-    <section class:lesson-open={workspaceMode === "plfa"} class="editor-pane">
-      {#if workspaceMode === "plfa"}
-        <section class="reader-pane" aria-label="PLFA chapter">
+    <section class:lesson-open={workspaceMode === "content"} class="editor-pane">
+      {#if workspaceMode === "content"}
+        <section class="reader-pane" aria-label="Chapter reader">
           <div class="reader-tabs">
             <button
               class="reader-tab active"
@@ -959,16 +968,16 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
           <div class="reader-nav">
             <button
               onclick={() => moveChapter(-1)}
-              disabled={selectedChapterIndex <= 0 || plfaLoading}
-              aria-label="Previous PLFA chapter"
+              disabled={selectedChapterIndex <= 0 || chapterLoading}
+              aria-label="Previous chapter"
               title="Previous chapter"><ArrowLeft size={14} /></button
             >
-            <strong>{selectedChapter?.title ?? "PLFA"}</strong>
+            <strong>{selectedChapter?.title ?? "Content"}</strong>
             <button
               onclick={() => moveChapter(1)}
-              disabled={selectedChapterIndex >= plfaChapters.length - 1 ||
-                plfaLoading}
-              aria-label="Next PLFA chapter"
+              disabled={selectedChapterIndex >= contentChapters.length - 1 ||
+                chapterLoading}
+              aria-label="Next chapter"
               title="Next chapter"><ArrowRight size={14} /></button
             >
           </div>
@@ -979,25 +988,26 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
             onclick={handleReaderClick}
             onscroll={() => scheduleScrollSync("reader")}
           >
-            {#if plfaLoading}
+            {#if chapterLoading}
               <div class="reader-state">
                 <LoaderCircle size={15} class="spin" />Opening chapter
               </div>
-            {:else if plfaError}
+            {:else if chapterError}
               <div class="reader-state error">
-                <CircleAlert size={15} />{plfaError}
+                <CircleAlert size={15} />{chapterError}
               </div>
             {:else}
-              <article class="markdown-body">{@html plfaHtml}</article>
+              <article class="markdown-body">{@html chapterHtml}</article>
             {/if}
           </div>
           <footer class="reader-status">
             <a
-              href={plfaManifest?.source ?? "https://plfa.github.io"}
+              href={contentManifest?.source ?? "#"}
               target="_blank"
-              rel="noreferrer">PLFA</a
-            ><span>CC BY 4.0</span><span class="status-spacer"></span><span
-              >{selectedChapterIndex + 1}/{plfaChapters.length}</span
+              rel="noreferrer">Source</a
+            ><span>{contentManifest?.license ?? ""}</span><span class="status-spacer"
+            ></span><span
+              >{selectedChapterIndex + 1}/{contentChapters.length}</span
             >
           </footer>
         </section>
@@ -1376,7 +1386,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   .file-row :global(svg) {
     color: var(--green);
   }
-  .plfa-tree {
+  .content-tree {
     min-height: 0;
     flex: 1;
     overflow-y: auto;

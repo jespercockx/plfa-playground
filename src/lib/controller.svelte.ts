@@ -755,7 +755,7 @@ export class AgdaController {
     if (!this.driveIsCreated) throw new Error("Agda filesystem is not ready");
 
     this.driveArchiveLoading = true;
-    this.lastAction = `Loading ${missing.length} PLFA cache ${missing.length === 1 ? "bundle" : "bundles"}…`;
+    this.lastAction = `Loading ${missing.length} interface cache ${missing.length === 1 ? "bundle" : "bundles"}…`;
     const mount = async () => {
       const archives = await Promise.all(
         missing.map(async (url) => {
@@ -765,7 +765,7 @@ export class AgdaController {
           return { url, data: await response.arrayBuffer() };
         }),
       );
-      this.lastAction = "Installing PLFA cache…";
+      this.lastAction = "Installing interface cache…";
       for (const archive of archives) {
         await mountArchiveOnDrive(this.driveHandle, archive.data);
         this._mountedDriveArchives.add(archive.url);
@@ -774,7 +774,7 @@ export class AgdaController {
     this._archiveMountPromise = mount();
     try {
       await this._archiveMountPromise;
-      this.lastAction = "PLFA cache ready";
+      this.lastAction = "Interface cache ready";
     } finally {
       this._archiveMountPromise = undefined;
       this.driveArchiveLoading = false;

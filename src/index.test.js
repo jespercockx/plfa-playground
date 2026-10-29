@@ -26,7 +26,7 @@ describe("Agda completion", () => {
   });
 });
 
-describe("PLFA browser source", () => {
+describe("content import rewrite", () => {
   it("uses narrow modules without changing any source offsets", () => {
     const source = `module plfa.part1.Sample where
 open import Function using (_∘_)
