@@ -4,6 +4,7 @@
   "description": "A complete Agda 2.8 editor and interaction environment running in the browser through WebAssembly.",
   "type": "module",
   "private": true,
+  "//": "vite is capped at ~8.2.2 (<8.3.0) on purpose. Vite 8.3.0+ leaves the '?worker&inline' query in the URL it generates for new Worker(new URL('...?worker&inline', import.meta.url)). The browser then loads Vite's worker-wrapper module as the worker itself, so the Agda WASM worker never runs and the UI hangs on 'Starting Agda 100%'. Lift this cap once upstream is fixed.",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && node scripts/prepare-cloudflare-assets.mjs",
@@ -32,7 +33,7 @@
     "svelte": "^5.57.0",
     "svelte-check": "^4.4.5",
     "typescript": "^5.9.3",
-    "vite": "^8.2.2",
+    "vite": "~8.2.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.127.1"
   },
@@ -58,5 +59,9 @@
     "marked": "^16.4.2",
     "spsc": "^0.0.7",
     "zod": "^4.3.6"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261023.1": true
   }
 }
