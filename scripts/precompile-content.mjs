@@ -1,30 +1,39 @@
+// Optional: precompile Agda interfaces for the bundled content so the browser
+// does not type-check the standard library and every earlier chapter on first
+// visit. Not run by default — it needs a native Agda 2.8.0 on PATH (see the
+// dist repo's UPDATING.md for the matching binary).
+//
+// Reads `static/content/{project.zip,manifest.json}` written by
+// `sync-content.mjs`, checks every chapter with native Agda, and writes one
+// deduplicated lazy archive per chapter under `static/content/interfaces/`
+// (including the standard-library interfaces each chapter needs). The main
+// standard-library and project archives stay source-only, so nothing here
+// mutates them — `sync-runtime` overwrites `static/agda-stdlib-*.zip` on every
+// build anyway.
 import { spawnSync } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
   readFile,
   readdir,
-  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
-import {
-  browserAgdaModules,
-  browserAgdaSource,
-} from "../src/lib/agda/browser-source.js";
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 const buildRoot = path.join(projectRoot, ".build-tmp");
-const stdlibArchive = path.join(projectRoot, "static", "agda-stdlib-2.3.zip");
-const plfaArchive = path.join(projectRoot, "static", "plfa", "project.zip");
-const plfaManifest = path.join(projectRoot, "static", "plfa", "manifest.json");
-const interfaceRoot = path.join(projectRoot, "static", "plfa", "interfaces");
+const staticRoot = path.join(projectRoot, "static");
+const contentRoot = path.join(staticRoot, "content");
+const interfaceRoot = path.join(contentRoot, "interfaces");
+const config = JSON.parse(
+  await readFile(path.join(projectRoot, "playground.config.json"), "utf8"),
+);
 const agdaBinary = process.argv[2] ?? process.env.AGDA ?? "agda";
 
 async function extract(zip, destination) {
@@ -53,12 +62,6 @@ async function findInterfaces(root) {
   return interfaces;
 }
 
-function removeInterfaces(zip) {
-  for (const name of Object.keys(zip.files)) {
-    if (name.endsWith(".agdai")) zip.remove(name);
-  }
-}
-
 function archivePath(root, file) {
   return path.relative(root, file).split(path.sep).join("/");
 }
@@ -67,11 +70,11 @@ async function collectRuntimeInterfaces(
   workingDirectory,
   stdlibRoot,
   stdlibBuild,
-  plfaBuild,
+  projectBuild,
 ) {
-  const [stdlibFiles, plfaFiles] = await Promise.all([
+  const [stdlibFiles, projectFiles] = await Promise.all([
     findInterfaces(stdlibBuild),
-    findInterfaces(plfaBuild),
+    findInterfaces(projectBuild),
   ]);
   return [
     ...stdlibFiles.map((file) => ({
@@ -79,10 +82,10 @@ async function collectRuntimeInterfaces(
       path: `stdlib/${archivePath(stdlibRoot, file)}`,
       library: "standard-library",
     })),
-    ...plfaFiles.map((file) => ({
+    ...projectFiles.map((file) => ({
       file,
       path: archivePath(workingDirectory, file),
-      library: "PLFA",
+      library: config.library,
     })),
   ];
 }
@@ -105,52 +108,53 @@ const version = spawnSync(agdaBinary, ["--version"], { encoding: "utf8" });
 if (version.error) throw version.error;
 if (version.status !== 0 || !version.stdout.startsWith("Agda version 2.8.0")) {
   throw new Error(
-    `PLFA interfaces require Agda 2.8.0; received ${version.stdout.trim() || "an unknown version"}`,
+    `Content interfaces require Agda 2.8.0; received ${version.stdout.trim() || "an unknown version"}`,
   );
+}
+
+const stdlibZipName = (await readdir(staticRoot)).find(
+  (name) => name.startsWith("agda-stdlib-") && name.endsWith(".zip"),
+);
+if (!stdlibZipName) {
+  throw new Error("Could not find static/agda-stdlib-*.zip; run npm run sync:runtime");
 }
 
 await mkdir(buildRoot, { recursive: true });
 const workingDirectory = await mkdtemp(
-  path.join(buildRoot, "plfa-interface-cache-"),
+  path.join(buildRoot, "content-interface-cache-"),
 );
 
 try {
-  const [stdlibZip, plfaZip] = await Promise.all([
-    JSZip.loadAsync(await readFile(stdlibArchive)),
-    JSZip.loadAsync(await readFile(plfaArchive)),
+  const [stdlibZip, projectZip] = await Promise.all([
+    JSZip.loadAsync(await readFile(path.join(staticRoot, stdlibZipName))),
+    JSZip.loadAsync(await readFile(path.join(contentRoot, "project.zip"))),
   ]);
-  const sourceManifest = JSON.parse(await readFile(plfaManifest, "utf8"));
-  for (const chapter of sourceManifest.groups.flatMap(
-    (group) => group.chapters,
-  )) {
-    const visibleSource = await readFile(
-      path.join(projectRoot, "static", chapter.sourcePath.replace(/^\//, "")),
-      "utf8",
-    );
-    plfaZip.file(
-      chapter.modulePath.replace(/^\//, ""),
-      browserAgdaSource(chapter.modulePath, visibleSource),
-    );
-  }
-  for (const [name, source] of Object.entries(browserAgdaModules)) {
-    plfaZip.file(name, source);
-  }
+  const sourceManifest = JSON.parse(
+    await readFile(path.join(contentRoot, "manifest.json"), "utf8"),
+  );
   await Promise.all([
     extract(stdlibZip, workingDirectory),
-    extract(plfaZip, workingDirectory),
+    extract(projectZip, workingDirectory),
   ]);
 
-  const stdlibRoot = path.join(workingDirectory, "agda-stdlib-2.3");
+  const stdlibDirectory = (await readdir(workingDirectory, {
+    withFileTypes: true,
+  })).find(
+    (entry) => entry.isDirectory() && entry.name.startsWith("agda-stdlib-"),
+  );
+  if (!stdlibDirectory) {
+    throw new Error("Could not find the extracted standard library");
+  }
+  const stdlibRoot = path.join(workingDirectory, stdlibDirectory.name);
   const stdlibBuild = path.join(stdlibRoot, "_build");
-  const plfaBuild = path.join(workingDirectory, "_build");
+  const projectBuild = path.join(workingDirectory, "_build");
   await Promise.all([
     rm(stdlibBuild, { recursive: true, force: true }),
-    rm(plfaBuild, { recursive: true, force: true }),
+    rm(projectBuild, { recursive: true, force: true }),
     rm(interfaceRoot, { recursive: true, force: true }),
   ]);
 
-  const manifest = JSON.parse(await readFile(plfaManifest, "utf8"));
-  const chapters = manifest.groups.flatMap((group) => group.chapters);
+  const chapters = sourceManifest.groups.flatMap((group) => group.chapters);
   const bundledPaths = new Set();
   for (const [index, chapter] of chapters.entries()) {
     console.log(`[${index + 1}/${chapters.length}] ${chapter.id}`);
@@ -188,7 +192,7 @@ try {
       workingDirectory,
       stdlibRoot,
       stdlibBuild,
-      plfaBuild,
+      projectBuild,
     );
     const newInterfaces = currentInterfaces.filter(
       (entry) => !bundledPaths.has(entry.path),
@@ -197,38 +201,16 @@ try {
     for (const entry of newInterfaces) bundledPaths.add(entry.path);
   }
 
-  const [stdlibInterfaces, plfaInterfaces] = await Promise.all([
+  const [stdlibInterfaces, projectInterfaces] = await Promise.all([
     findInterfaces(stdlibBuild),
-    findInterfaces(plfaBuild),
-  ]);
-  removeInterfaces(stdlibZip);
-  removeInterfaces(plfaZip);
-
-  const options = {
-    type: "nodebuffer",
-    compression: "DEFLATE",
-    compressionOptions: { level: 9 },
-  };
-  const [stdlibOutput, plfaOutput] = await Promise.all([
-    stdlibZip.generateAsync(options),
-    plfaZip.generateAsync(options),
-  ]);
-  const stdlibNext = `${stdlibArchive}.next`;
-  const plfaNext = `${plfaArchive}.next`;
-  await Promise.all([
-    writeFile(stdlibNext, stdlibOutput),
-    writeFile(plfaNext, plfaOutput),
-  ]);
-  await Promise.all([
-    rename(stdlibNext, stdlibArchive),
-    rename(plfaNext, plfaArchive),
+    findInterfaces(projectBuild),
   ]);
 
   console.log(
-    `Bundled ${stdlibInterfaces.length} standard-library interfaces and ${plfaInterfaces.length} PLFA interfaces across ${chapters.length} lazy archives.`,
+    `Bundled ${stdlibInterfaces.length} standard-library interfaces and ${projectInterfaces.length} content interfaces across ${chapters.length} lazy archives.`,
   );
 } finally {
   await rm(workingDirectory, { recursive: true, force: true });
 }
 
-await import("./index-plfa-interfaces.mjs");
+await import("./index-content-interfaces.mjs");

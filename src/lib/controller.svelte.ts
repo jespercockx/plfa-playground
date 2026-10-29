@@ -92,6 +92,23 @@ interface AgdaVersionSpec {
   stdlibPath: string;
 }
 
+interface ContentImportRewrite {
+  moduleRoot?: string;
+  imports?: ReadonlyArray<readonly [string, string]>;
+  conditionalImports?: ReadonlyArray<{
+    from: string;
+    when: string;
+    then: string;
+    otherwise: string;
+  }>;
+  stripSections?: readonly string[];
+}
+
+interface ContentManifest {
+  hash: string;
+  importRewrite?: ContentImportRewrite | null;
+}
+
 function withCacheBust(url: string, cacheBust: string) {
   return `${url}?cache=${cacheBust}`;
 }
@@ -210,6 +227,8 @@ export class AgdaController {
   pendingGoalCheck = false;
   loadedSnapshot?: { filePath: string; source: string };
   pendingLoadSnapshot?: { filePath: string; source: string };
+  contentManifest?: ContentManifest | null;
+  private _contentManifestPromise?: Promise<ContentManifest | null>;
 
   _lspWorker: Worker | undefined;
   _driveHostWorker: Worker | undefined;
@@ -356,10 +375,25 @@ export class AgdaController {
     return ret;
   }
 
+  // The content manifest supplies the import-rewrite spec and the content hash
+  // used to namespace the persistent cache. A missing manifest (for example a
+  // template with no content yet) falls back to no rewrite and an empty key.
+  private loadContentManifest(): Promise<ContentManifest | null> {
+    this._contentManifestPromise ??= fetch(asset("/content/manifest.json"))
+      .then((response) =>
+        response.ok ? (response.json() as Promise<ContentManifest>) : null,
+      )
+      .catch(() => null);
+    return this._contentManifestPromise.then((manifest) => {
+      this.contentManifest = manifest;
+      return manifest;
+    });
+  }
+
   async initDriveHostWorker(options: {
     builtin?: ArrayBuffer;
     stdlib?: ArrayBuffer;
-    plfa?: ArrayBuffer;
+    project?: ArrayBuffer;
   }) {
     if (this._driveHostWorker) {
       throw new Error("should not be reusing existing drive host worker");
@@ -375,9 +409,10 @@ export class AgdaController {
       stdout,
       agdaDataZip: options.builtin ?? null,
       agdaStdlibZip: options.stdlib ?? null,
-      plfaProjectZip: options.plfa ?? null,
-      cacheNamespace:
-        "stock-agda-2.8.0-o2-stdlib-2.3-plfa-870f9bb12d61927cdea3311cedcbbc48ac3fc422-browser-adapters-v1",
+      projectZip: options.project ?? null,
+      // Invalidate the persistent drive cache when either the runtime
+      // distribution or the site content changes.
+      cacheNamespace: `als-dist-${runtimeManifest[0]?.agdaVersion ?? "unknown"}-content-${this.contentManifest?.hash ?? "none"}`,
     });
 
     if (event.data !== "fs-ready") {
@@ -451,7 +486,9 @@ export class AgdaController {
 
     this.workerInitData = await initPromise;
 
-    const [, dataFileData, stdlibData, plfaData] = await Promise.all([
+    const contentManifest = await this.loadContentManifest();
+
+    const [, dataFileData, stdlibData, projectData] = await Promise.all([
       this.workerInitData
         .getALSVersion()
         .then((ver) => (this.receivedALSVersion = ver)),
@@ -459,16 +496,18 @@ export class AgdaController {
       fetch(agdaVersionMap[this.config.agdaVersion].stdlibPath).then(
         (x) => x.arrayBuffer(),
       ),
-      fetch(
-        `${asset("/plfa/project.zip")}?cache=browser-adapters-v1-20260831`,
-      ).then((x) => x.arrayBuffer()),
+      contentManifest
+        ? fetch(
+            `${asset("/content/project.zip")}?cache=${contentManifest.hash}`,
+          ).then((x) => x.arrayBuffer())
+        : Promise.resolve(undefined),
     ]);
 
     try {
       await this.initDriveHostWorker({
         builtin: dataFileData,
         stdlib: stdlibData,
-        plfa: plfaData,
+        project: projectData,
       });
     } catch (err) {
       return Promise.reject(
@@ -683,7 +722,11 @@ export class AgdaController {
       await writeSourceFileToDrive(
         this.driveHandle,
         this.currentFilePath,
-        browserAgdaSource(this.currentFilePath, doc),
+        browserAgdaSource(
+          this.currentFilePath,
+          doc,
+          this.contentManifest?.importRewrite,
+        ),
       );
     } finally {
       this.driveIsLocked = false;

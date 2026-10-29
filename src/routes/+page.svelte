@@ -80,8 +80,6 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     title: string;
     source: string;
     license: string;
-    commit: string;
-    revisionDate: string;
     groups: PlfaGroup[];
   }
 
@@ -430,9 +428,9 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     };
     window.addEventListener("keydown", globalKeydown, { capture: true });
 
-    void fetch("/plfa/manifest.json")
+    void fetch("/content/manifest.json")
       .then((response) => {
-        if (!response.ok) throw new Error("Could not load the PLFA index");
+        if (!response.ok) throw new Error("Could not load the content index");
         return response.json() as Promise<PlfaManifest>;
       })
       .then((manifest) => (plfaManifest = manifest))
@@ -454,11 +452,11 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   function loadPlfaInterfaceManifest() {
     if (plfaInterfaceManifestPromise) return plfaInterfaceManifestPromise;
     plfaInterfaceManifestPromise = fetch(
-      "/plfa/interfaces/manifest.json?cache=dependency-closures-v1-20260831",
+      "/content/interfaces/manifest.json?cache=dependency-closures-v1-20260831",
     )
       .then((response) => {
         if (!response.ok)
-          throw new Error("Could not load the PLFA cache index");
+          throw new Error("Could not load the content cache index");
         return response.json() as Promise<PlfaInterfaceManifest>;
       })
       .then((manifest) => {
@@ -643,7 +641,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
       plfaChapters.slice(0, index + 1).map((candidate) => candidate.id);
     return archives.map(
       (archive) =>
-        `/plfa/interfaces/${archive}.zip?cache=dependency-closures-v1-20260831`,
+        `/content/interfaces/${archive}.zip?cache=dependency-closures-v1-20260831`,
     );
   }
 

@@ -29,3 +29,9 @@ vite.config.js.timestamp-*
 /static/als-*.wasm.gz
 /static/agda-data.zip
 /static/agda-stdlib-*.zip
+
+# Generated content output; the sources live in content/ and the precompiled
+# interface archives under static/content/interfaces/ are kept for the fast path.
+/static/content/*
+!/static/content/interfaces/
+!/static/content/interfaces/**

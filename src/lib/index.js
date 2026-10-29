@@ -178,7 +178,7 @@ export function makeDriveHostWorker(initialMessage) {
     const transferables = [
       initialMessage.agdaDataZip,
       initialMessage.agdaStdlibZip,
-      initialMessage.plfaProjectZip,
+      initialMessage.projectZip,
     ].filter(Boolean);
 
     worker.postMessage(initialMessage, transferables);

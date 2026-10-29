@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
@@ -8,13 +8,20 @@ const projectRoot = path.resolve(
   "..",
 );
 const staticRoot = path.join(projectRoot, "static");
-const plfaRoot = path.join(staticRoot, "plfa");
-const interfaceRoot = path.join(plfaRoot, "interfaces");
+const contentRoot = path.join(staticRoot, "content");
+const interfaceRoot = path.join(contentRoot, "interfaces");
 
-const [stdlibZip, plfaZip, manifest] = await Promise.all([
-  JSZip.loadAsync(await readFile(path.join(staticRoot, "agda-stdlib-2.3.zip"))),
-  JSZip.loadAsync(await readFile(path.join(plfaRoot, "project.zip"))),
-  readFile(path.join(plfaRoot, "manifest.json"), "utf8").then(JSON.parse),
+const stdlibZipName = (await readdir(staticRoot)).find(
+  (name) => name.startsWith("agda-stdlib-") && name.endsWith(".zip"),
+);
+if (!stdlibZipName) {
+  throw new Error("Could not find static/agda-stdlib-*.zip; run npm run sync:runtime");
+}
+
+const [stdlibZip, projectZip, manifest] = await Promise.all([
+  JSZip.loadAsync(await readFile(path.join(staticRoot, stdlibZipName))),
+  JSZip.loadAsync(await readFile(path.join(contentRoot, "project.zip"))),
+  readFile(path.join(contentRoot, "manifest.json"), "utf8").then(JSON.parse),
 ]);
 
 const sources = new Map();
@@ -39,7 +46,7 @@ async function collectSources(zip) {
   }
 }
 
-await Promise.all([collectSources(stdlibZip), collectSources(plfaZip)]);
+await Promise.all([collectSources(stdlibZip), collectSources(projectZip)]);
 
 const chapters = manifest.groups.flatMap((group) => group.chapters);
 const chapterOrder = new Map(
@@ -128,5 +135,5 @@ await writeFile(
 );
 
 console.log(
-  `Indexed ${chapters.length} PLFA interface closures (${(selectedBytes / 1048576).toFixed(1)} MiB selected instead of ${(cumulativeBytes / 1048576).toFixed(1)} MiB cumulative across direct chapter opens).`,
+  `Indexed ${chapters.length} content interface closures (${(selectedBytes / 1048576).toFixed(1)} MiB selected instead of ${(cumulativeBytes / 1048576).toFixed(1)} MiB cumulative across direct chapter opens).`,
 );

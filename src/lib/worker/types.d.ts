@@ -48,6 +48,6 @@ export interface DriveWorkerInitObject {
   stdout: SharedArrayBuffer;
   agdaDataZip: ArrayBuffer | null;
   agdaStdlibZip: ArrayBuffer | null;
-  plfaProjectZip: ArrayBuffer | null;
+  projectZip: ArrayBuffer | null;
   cacheNamespace: string;
 }

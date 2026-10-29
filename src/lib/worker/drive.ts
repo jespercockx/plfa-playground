@@ -68,7 +68,7 @@ const {
   stdout,
   agdaDataZip,
   agdaStdlibZip,
-  plfaProjectZip,
+  projectZip,
   cacheNamespace,
 } = await new Promise<DriveWorkerInitObject>((r) => {
   addEventListener(
@@ -103,6 +103,34 @@ async function extractZip(
   });
 
   return Promise.all(filePromises);
+}
+
+// Derive Agda's library configuration from the `*.agda-lib` files that ended
+// up in the drive — the standard library plus whatever the content archive
+// ships — so nothing about a particular library is hardcoded here.
+function writeLibraryConfiguration() {
+  const entries: Array<{ path: string; name: string }> = [];
+  const seen = new Set<string>();
+  for (const [path, file] of Object.entries(fs)) {
+    if (!path.endsWith(".agda-lib") || seen.has(path)) continue;
+    const content =
+      typeof file.content === "string"
+        ? file.content
+        : new TextDecoder().decode(file.content);
+    const name = content.match(/^\s*name\s*:\s*(\S+)/m)?.[1];
+    if (!name) continue;
+    seen.add(path);
+    entries.push({ path, name });
+  }
+  if (!entries.length) return;
+  fsAssign(
+    "/home/root/.config/agda/libraries",
+    `${entries.map((entry) => entry.path).join("\n")}\n`,
+  );
+  fsAssign(
+    "/home/root/.config/agda/defaults",
+    `${entries.map((entry) => entry.name).join("\n")}\n`,
+  );
 }
 
 // TODO: make this changable dynamically
@@ -228,21 +256,13 @@ if (agdaStdlibZip) {
     }
     return p.replace(/^agda-stdlib-[\.\d]+\//, "");
   });
-  fsAssign(
-    "/home/root/.config/agda/libraries",
-    "/stdlib/standard-library.agda-lib\n",
-  );
-  fsAssign("/home/root/.config/agda/defaults", "standard-library\n");
 }
 
-if (plfaProjectZip) {
-  await extractZip(plfaProjectZip, "/");
-  fsAssign(
-    "/home/root/.config/agda/libraries",
-    "/stdlib/standard-library.agda-lib\n/plfa.agda-lib\n",
-  );
-  fsAssign("/home/root/.config/agda/defaults", "standard-library\nplfa\n");
+if (projectZip) {
+  await extractZip(projectZip, "/");
 }
+
+writeLibraryConfiguration();
 
 const cacheDatabase = await openCacheDatabase();
 await restoreCachedFiles(cacheDatabase).catch((error) => {

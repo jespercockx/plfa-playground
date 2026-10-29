@@ -4,6 +4,7 @@ import { CompletionContext } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import { agdaCompletionSource } from "$lib/codemirror/completion";
 import { browserAgdaSource } from "$lib/agda/browser-source";
+import config from "../playground.config.json";
 
 function complete(source, explicit = true) {
   const state = EditorState.create({ doc: source });
@@ -38,6 +39,7 @@ answer = {!  !}
     const browserSource = browserAgdaSource(
       "/plfa/part1/Sample.lagda.md",
       source,
+      config.importRewrite,
     );
     expect(browserSource).toHaveLength(source.length);
     expect(browserSource.indexOf("answer")).toBe(source.indexOf("answer"));
@@ -63,6 +65,7 @@ ending = Set
     const browserSource = browserAgdaSource(
       "/plfa/part1/Sample.lagda.md",
       source,
+      config.importRewrite,
     );
     expect(browserSource).toHaveLength(source.length);
     expect(new TextEncoder().encode(browserSource)).toHaveLength(
@@ -74,6 +77,8 @@ ending = Set
 
   it("never transforms ordinary playground files", () => {
     const source = "open import Data.Product\n";
-    expect(browserAgdaSource("/Main.agda", source)).toBe(source);
+    expect(browserAgdaSource("/Main.agda", source, config.importRewrite)).toBe(
+      source,
+    );
   });
 });

@@ -75,7 +75,7 @@ With a local Chromium/Chrome executable available, run the browser regression
 benchmark against every PLFA chapter with:
 
 ```sh
-PLAYGROUND_URL=http://127.0.0.1:5173 npm run benchmark:plfa
+PLAYGROUND_URL=http://127.0.0.1:5173 npm run benchmark:content
 ```
 
 Set `CHROME_EXECUTABLE` when Chrome is not on `PATH`. `CHAPTERS=Naturals,Lambda`
@@ -113,24 +113,39 @@ same UTF-8 width so Agda ranges, highlighting, errors, goals, and document/code
 scroll synchronization stay aligned. These adapters are ordinary checked Agda
 modules, not compiler patches.
 
-## Refresh the embedded PLFA edition
+## Content pipeline
 
-Clone [`plfa/plfa.github.io`](https://github.com/plfa/plfa.github.io), then run:
+Site content lives in `content/` (`.agda` and `.lagda.md` files, organised into
+one directory per group) and is described by `playground.config.json`. The
+pipeline runs automatically before `npm run dev` / `npm run build`, and can be
+run directly:
 
 ```sh
-npm run sync:plfa -- /path/to/plfa.github.io
-npm run precompile:plfa -- /path/to/agda-2.8.0
+npm run sync:content
 ```
 
-This rebuilds the chapter manifest, native literate Agda sources, browser
-filesystem archive, and PLFA license copy under `static/plfa/`. The second
-command refreshes the Agda 2.8 interface cache for every bundled chapter and
-its standard-library dependencies, keeping browser checks fast without a
-server. Interfaces are emitted as deduplicated per-chapter archives under
-`static/plfa/interfaces/`. A generated dependency index makes the browser mount
-only archives in the selected chapter's transitive import closure instead of
-every earlier book chapter. The source-only standard-library archive therefore
-stays small for users who never open PLFA.
+It writes the raw display sources, the Agda project archive, and the content
+index under `static/content/` (generated, not committed). With a native Agda
+2.8.0 on `PATH`, the optional fast path precompiles interfaces so first visits
+do not type-check the standard library and earlier chapters:
+
+```sh
+npm run precompile:content -- /path/to/agda-2.8.0
+```
+
+That refreshes the deduplicated per-chapter archives under
+`static/content/interfaces/` and the generated dependency index, so the browser
+mounts only the archives in the selected chapter's transitive import closure.
+The source-only standard-library archive therefore stays small for users who
+never open a chapter.
+
+The bundled PLFA book is the shipped example content. Its browser adapters are
+position-compatible replacements for a small set of broad standard-library
+imports, declared in `playground.config.json`; the displayed `.lagda.md` text
+stays the book's original source, and each replacement module name occupies
+exactly the same UTF-8 width so Agda ranges, highlighting, errors, goals, and
+document/code scroll synchronization stay aligned. A template with no
+`importRewrite` in its config gets an identity rewrite.
 
 ## Bundling another local Agda library
 

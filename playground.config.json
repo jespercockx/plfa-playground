@@ -1,0 +1,109 @@
+{
+  "title": "Programming Language Foundations in Agda",
+  "library": "plfa",
+  "source": "https://github.com/plfa/plfa.github.io",
+  "license": "CC BY 4.0",
+  "licenseFile": "LICENSE",
+  "groups": {
+    "part1": "Part 1 · Logical foundations",
+    "part2": "Part 2 · Programming language foundations",
+    "part3": "Part 3 · Denotational semantics"
+  },
+  "order": {
+    "part1": [
+      "Naturals",
+      "Induction",
+      "Relations",
+      "Equality",
+      "Isomorphism",
+      "Connectives",
+      "Negation",
+      "Quantifiers",
+      "Decidable",
+      "Lists"
+    ],
+    "part2": [
+      "Lambda",
+      "Properties",
+      "DeBruijn",
+      "More",
+      "Bisimulation",
+      "Inference",
+      "Untyped",
+      "Substitution",
+      "BigStep",
+      "Confluence"
+    ],
+    "part3": [
+      "Denotational",
+      "Compositional",
+      "Soundness",
+      "Adequacy",
+      "ContextualEquivalence"
+    ]
+  },
+  "importRewrite": {
+    "moduleRoot": "/plfa/",
+    "modules": {
+      "plfa/Fun.agda": "module plfa.Fun where\nopen import Function.Base public\n",
+      "plfa/Product.agda": "module plfa.Product where\nopen import Data.Product.Base public\n",
+      "plfa/Sum.agda": "module plfa.Sum where\nopen import Data.Sum.Base public\n",
+      "plfa/Unit.agda": "module plfa.Unit where\nopen import Data.Unit.Base public\n",
+      "plfa/Bool.agda": "module plfa.Bool where\nopen import Data.Bool.Base public\n",
+      "plfa/Nat.agda": "module plfa.Nat where\nopen import Agda.Builtin.Nat public\n  using (zero; suc; _+_; _*_)\n  renaming (Nat to ℕ; _-_ to _∸_)\n\ninfixr 8 _^_\n_^_ : ℕ → ℕ → ℕ\nm ^ zero  = 1\nm ^ suc n = m * (m ^ n)\n\ninfix 4 _≤_ _<_\ndata _≤_ : ℕ → ℕ → Set where\n  z≤n : ∀ {n} → zero ≤ n\n  s≤s : ∀ {m n} → m ≤ n → suc m ≤ suc n\n\n_<_ : ℕ → ℕ → Set\nm < n = suc m ≤ n\n\npattern z<s {n} = s≤s (z≤n {n})\npattern s<s {m} {n} m<n = s≤s {m} {n} m<n\n\nopen import Relation.Nullary using (Dec; yes; no)\n\ninfix 4 _≤?_\n_≤?_ : ∀ m n → Dec (m ≤ n)\nzero  ≤? n     = yes z≤n\nsuc m ≤? zero  = no (λ ())\nsuc m ≤? suc n with m ≤? n\n... | yes m≤n = yes (s≤s m≤n)\n... | no  m≰n = no λ { (s≤s m≤n) → m≰n m≤n }\n",
+      "plfa/NatProps.agda": "module plfa.NatProps where\n\nopen import Agda.Builtin.Nat using (Nat; zero; suc; _+_; _*_)\nopen import Agda.Builtin.Equality using (_≡_; refl)\n\nsym : ∀ {A : Set} {x y : A} → x ≡ y → y ≡ x\nsym refl = refl\n\ncong : ∀ {A B : Set} (f : A → B) {x y} → x ≡ y → f x ≡ f y\ncong f refl = refl\n\n+-suc : ∀ m n → m + suc n ≡ suc (m + n)\n+-suc zero n = refl\n+-suc (suc m) n = cong suc (+-suc m n)\n\n+-assoc : ∀ m n o → (m + n) + o ≡ m + (n + o)\n+-assoc zero n o = refl\n+-assoc (suc m) n o = cong suc (+-assoc m n o)\n\n+-identityˡ : ∀ n → zero + n ≡ n\n+-identityˡ n = refl\n\n+-identityʳ : ∀ n → n + zero ≡ n\n+-identityʳ zero = refl\n+-identityʳ (suc n) = cong suc (+-identityʳ n)\n\n+-comm : ∀ m n → m + n ≡ n + m\n+-comm zero n = sym (+-identityʳ n)\n+-comm (suc m) n rewrite +-comm m n | sym (+-suc n m) = refl\n\n*-zeroʳ : ∀ n → n * zero ≡ zero\n*-zeroʳ zero = refl\n*-zeroʳ (suc n) = *-zeroʳ n\n\n*-suc : ∀ m n → m * suc n ≡ m + m * n\n*-suc zero n = refl\n*-suc (suc m) n\n  rewrite *-suc m n\n        | sym (+-assoc n m (m * n))\n        | +-comm n m\n        | +-assoc m n (m * n)\n  = refl\n\n*-identityˡ : ∀ n → 1 * n ≡ n\n*-identityˡ n = +-identityʳ n\n\n*-identityʳ : ∀ n → n * 1 ≡ n\n*-identityʳ zero = refl\n*-identityʳ (suc n) = cong suc (*-identityʳ n)\n\n*-comm : ∀ m n → m * n ≡ n * m\n*-comm zero n = sym (*-zeroʳ n)\n*-comm (suc m) n rewrite *-comm m n | sym (*-suc n m) = refl\n\n*-distribʳ-+ : ∀ m n o → (n + o) * m ≡ n * m + o * m\n*-distribʳ-+ m zero o = refl\n*-distribʳ-+ m (suc n) o\n  rewrite *-distribʳ-+ m n o\n        | sym (+-assoc m (n * m) (o * m))\n  = refl\n\n*-assoc : ∀ m n o → (m * n) * o ≡ m * (n * o)\n*-assoc zero n o = refl\n*-assoc (suc m) n o\n  rewrite *-distribʳ-+ o n (m * n)\n        | *-assoc m n o\n  = refl\n",
+      "plfa/String.agda": "module plfa.String where\n\nopen import Agda.Builtin.Char using (Char; primCharToNat)\nopen import Agda.Builtin.Char.Properties using (primCharToNatInjective)\nopen import Agda.Builtin.Equality using (_≡_; refl)\nopen import Agda.Builtin.List using (List; []; _∷_)\nopen import Agda.Builtin.Nat using (Nat; zero; suc)\nopen import Agda.Builtin.String public using (String)\nopen import Agda.Builtin.String as String using (primStringToList)\nopen import Agda.Builtin.String.Properties using (primStringToListInjective)\nopen import Relation.Nullary using (Dec; yes; no)\n\ncong : ∀ {A B : Set} (f : A → B) {x y} → x ≡ y → f x ≡ f y\ncong f refl = refl\n\nnat-eq? : ∀ (x y : Nat) → Dec (x ≡ y)\nnat-eq? zero zero = yes refl\nnat-eq? zero (suc y) = no (λ ())\nnat-eq? (suc x) zero = no (λ ())\nnat-eq? (suc x) (suc y) with nat-eq? x y\n... | yes refl = yes refl\n... | no x≢y = no λ { refl → x≢y refl }\n\nchar-eq? : ∀ (x y : Char) → Dec (x ≡ y)\nchar-eq? x y with nat-eq? (primCharToNat x) (primCharToNat y)\n... | yes p = yes (primCharToNatInjective x y p)\n... | no p = no λ q → p (cong primCharToNat q)\n\nlist-eq? : ∀ (xs ys : List Char) → Dec (xs ≡ ys)\nlist-eq? [] [] = yes refl\nlist-eq? [] (y ∷ ys) = no (λ ())\nlist-eq? (x ∷ xs) [] = no (λ ())\nlist-eq? (x ∷ xs) (y ∷ ys) with char-eq? x y | list-eq? xs ys\n... | yes refl | yes refl = yes refl\n... | no x≢y | _ = no λ { refl → x≢y refl }\n... | _ | no xs≢ys = no λ { refl → xs≢ys refl }\n\ninfix 4 _≟_\n_≟_ : ∀ (x y : String) → Dec (x ≡ y)\nx ≟ y with list-eq? (primStringToList x) (primStringToList y)\n... | yes p = yes (primStringToListInjective x y p)\n... | no p = no λ q → p (cong primStringToList q)\n",
+      "plfa/browser/EqualityCore.agda": "module plfa.browser.EqualityCore where\nopen import Relation.Binary.PropositionalEquality.Core public\n",
+      "plfa/browser/PropositionalEquality.agda": "module plfa.browser.PropositionalEquality where\nopen import Relation.Binary.PropositionalEquality.Core public\nopen import Relation.Binary.PropositionalEquality.Properties public\n"
+    },
+    "imports": [
+      [
+        "Function",
+        "plfa.Fun"
+      ],
+      [
+        "Data.Product",
+        "plfa.Product"
+      ],
+      [
+        "Data.Sum",
+        "plfa.Sum"
+      ],
+      [
+        "Data.Unit",
+        "plfa.Unit"
+      ],
+      [
+        "Data.Bool",
+        "plfa.Bool"
+      ],
+      [
+        "Data.Nat.Base",
+        "plfa.Nat"
+      ],
+      [
+        "Data.Nat.Properties",
+        "plfa.NatProps"
+      ],
+      [
+        "Data.String",
+        "plfa.String"
+      ],
+      [
+        "Data.Nat",
+        "plfa.Nat"
+      ]
+    ],
+    "conditionalImports": [
+      {
+        "from": "Relation.Binary.PropositionalEquality",
+        "when": "Eq.≡-Reasoning",
+        "then": "plfa.browser.PropositionalEquality",
+        "otherwise": "plfa.browser.EqualityCore"
+      }
+    ],
+    "stripSections": [
+      "Standard Library"
+    ]
+  }
+}
