@@ -212,16 +212,10 @@ async function persistCachedFiles(database: IDBDatabase | null) {
 }
 
 if (agdaDataZip) {
-  await extractZip(agdaDataZip, "/", (path) => {
-    // agda-wasm-dist still ships primitive interfaces beside their sources,
-    // but Agda 2.8 removed local interfaces and only looks in _build. Mount
-    // the bundled interfaces where Agda 2.8 expects them so every browser
-    // session does not recompile the primitive library from source.
-    if (path.startsWith("lib/prim/") && path.endsWith(".agdai")) {
-      return path.replace("lib/prim/", "lib/prim/_build/2.8.0/agda/");
-    }
-    return path;
-  });
+  // The dist repo's agda-data.zip already stores Agda's primitive interfaces
+  // under lib/prim/_build/<agdaVersion>/agda/, the only place Agda 2.8+ looks,
+  // so extraction is a plain pass-through.
+  await extractZip(agdaDataZip, "/");
 }
 
 if (agdaStdlibZip) {

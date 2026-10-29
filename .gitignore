@@ -23,3 +23,9 @@ node_modules
 
 # Vite
 vite.config.js.timestamp-*
+
+# Runtime binaries, populated by scripts/sync-runtime.mjs from vendor/agda-als-dist
+/static/als-*.wasm
+/static/als-*.wasm.gz
+/static/agda-data.zip
+/static/agda-stdlib-*.zip

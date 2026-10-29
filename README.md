@@ -25,9 +25,14 @@ MB over the wire with gzip); code does not need to be sent to a server.
 ## Run locally
 
 ```sh
+git submodule update --init --recursive
 npm ci
 npm run dev
 ```
+
+The Agda/ALS runtime binaries are not stored in Git; `npm run dev` (and
+`npm run build`) copy them from the `vendor/agda-als-dist` submodule into
+`static/` before starting Vite.
 
 Open <http://localhost:5173>. Press Ctrl/Cmd+Enter to check the module. The
 first visit downloads and initializes the compiler; subsequent visits can use
@@ -58,8 +63,13 @@ npm test
 npm run build
 ```
 
-The static site is written to `build/`. See [`compiler/README.md`](compiler/README.md)
-to rebuild the Agda WASM executable from pinned sources.
+The static site is written to `build/`. The Agda/ALS runtime binaries are not
+checked in; they are populated from the
+[`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist)
+submodule under `vendor/` by `scripts/sync-runtime.mjs` (run automatically by
+`npm run dev` and `npm run build`). See that repository's
+[`UPDATING.md`](https://github.com/jespercockx/agda-als-dist/blob/main/UPDATING.md)
+to rebuild the WASM executable from pinned sources.
 
 With a local Chromium/Chrome executable available, run the browser regression
 benchmark against every PLFA chapter with:
