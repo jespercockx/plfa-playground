@@ -17,6 +17,11 @@ const config = {
   },
   kit: {
     adapter: adapter({ precompress: false }),
+    // Deployed under a subpath on GitHub Pages (e.g. /plfa-playground); the
+    // Pages workflow sets BASE_PATH to the repository name. Empty locally.
+    paths: {
+      base: process.env.BASE_PATH ?? "",
+    },
   },
 };
 
