@@ -86,6 +86,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     license: string;
     library: string;
     interfaces?: boolean;
+    playgroundSource?: string;
     groups: ContentGroup[];
   }
 
@@ -142,6 +143,11 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
 
   const contentChapters = $derived(
     contentManifest?.groups.flatMap((group) => group.chapters) ?? [],
+  );
+  // Hide the content tree once we know there are no chapters, so a blank
+  // starter shows only the playground document.
+  const showContentTree = $derived(
+    !contentManifest || chapterError !== "" || contentChapters.length > 0,
   );
   const selectedChapter = $derived(
     contentChapters.find((chapter) => chapter.id === selectedChapterId),
@@ -455,6 +461,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
         expandedGroups = { [manifest.groups[0]?.id ?? ""]: true };
         selectedChapterId = manifest.groups[0]?.chapters[0]?.id ?? "";
         if (manifest.interfaces) void loadContentInterfaceManifest();
+        applyConfiguredPlaygroundSource(manifest.playgroundSource);
       })
       .catch((error) => (chapterError = readableError(error)));
 
@@ -809,6 +816,16 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
       setTimeout(() => void runAction(() => controller.loadAgdaFile()), 50);
   }
 
+  // Seed the built-in playground document from the content config, but only on
+  // a pristine first visit: never clobber a document the user has edited.
+  function applyConfiguredPlaygroundSource(source?: string) {
+    if (source === undefined || !editor) return;
+    if (workspaceMode !== "playground") return;
+    if (localStorage.getItem(LS_DOC_KEY) !== null) return;
+    if (editor.state.doc.toString() !== DEFAULT_SOURCE) return;
+    controller.setDocument(source, "/Main.agda", LS_DOC_KEY);
+  }
+
   function focusResource(resource: ActiveResource) {
     activeResource = resource;
     if (resource === "agda") setTimeout(() => editor?.focus());
@@ -918,62 +935,64 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
           title="Saved locally"
         ></span></button
       >
-      <button
-        class:open={contentExpanded}
-        class="tree-root tree-button"
-        onclick={() => (contentExpanded = !contentExpanded)}
-        aria-expanded={contentExpanded}
-      >
-        {#if contentExpanded}<ChevronDown size={13} />{:else}<ChevronRight
-            size={13}
-          />{/if}<span
-          >{contentManifest?.library?.toUpperCase() ?? "CONTENT"}</span
+      {#if showContentTree}
+        <button
+          class:open={contentExpanded}
+          class="tree-root tree-button"
+          onclick={() => (contentExpanded = !contentExpanded)}
+          aria-expanded={contentExpanded}
         >
-      </button>
-      {#if contentExpanded}
-        {#if contentManifest}
-          <div class="content-tree">
-            {#each contentManifest.groups as group}
-              {#if !group.flat}
-                <button
-                  class="tree-part"
-                  onclick={() =>
-                    (expandedGroups = {
-                      ...expandedGroups,
-                      [group.id]: !expandedGroups[group.id],
-                    })}
-                  aria-expanded={Boolean(expandedGroups[group.id])}
-                  title={group.title}
-                >
-                  {#if expandedGroups[group.id]}<ChevronDown
-                      size={12}
-                    />{:else}<ChevronRight size={12} />{/if}<span
-                    >{group.id.toUpperCase()}</span
-                  >
-                </button>
-              {/if}
-              {#if group.flat || expandedGroups[group.id]}
-                {#each group.chapters as chapter}
+          {#if contentExpanded}<ChevronDown size={13} />{:else}<ChevronRight
+              size={13}
+            />{/if}<span
+            >{contentManifest?.library?.toUpperCase() ?? "CONTENT"}</span
+          >
+        </button>
+        {#if contentExpanded}
+          {#if contentManifest}
+            <div class="content-tree">
+              {#each contentManifest.groups as group}
+                {#if !group.flat}
                   <button
-                    class:active={workspaceMode === "content" &&
-                      selectedChapterId === chapter.id}
-                    class="chapter-row"
-                    onclick={() => void openContentChapter(chapter)}
-                    disabled={isBusy}
-                    title={chapter.title}
+                    class="tree-part"
+                    onclick={() =>
+                      (expandedGroups = {
+                        ...expandedGroups,
+                        [group.id]: !expandedGroups[group.id],
+                      })}
+                    aria-expanded={Boolean(expandedGroups[group.id])}
+                    title={group.title}
                   >
-                    <FileText size={14} /><span>{chapter.fileName}</span>
+                    {#if expandedGroups[group.id]}<ChevronDown
+                        size={12}
+                      />{:else}<ChevronRight size={12} />{/if}<span
+                      >{group.id.toUpperCase()}</span
+                    >
                   </button>
-                {/each}
-              {/if}
-            {/each}
-          </div>
-        {:else if chapterError}
-          <div class="tree-message error">{chapterError}</div>
-        {:else}
-          <div class="tree-message">
-            <LoaderCircle size={13} class="spin" />Indexing
-          </div>
+                {/if}
+                {#if group.flat || expandedGroups[group.id]}
+                  {#each group.chapters as chapter}
+                    <button
+                      class:active={workspaceMode === "content" &&
+                        selectedChapterId === chapter.id}
+                      class="chapter-row"
+                      onclick={() => void openContentChapter(chapter)}
+                      disabled={isBusy}
+                      title={chapter.title}
+                    >
+                      <FileText size={14} /><span>{chapter.fileName}</span>
+                    </button>
+                  {/each}
+                {/if}
+              {/each}
+            </div>
+          {:else if chapterError}
+            <div class="tree-message error">{chapterError}</div>
+          {:else}
+            <div class="tree-message">
+              <LoaderCircle size={13} class="spin" />Indexing
+            </div>
+          {/if}
         {/if}
       {/if}
     </aside>

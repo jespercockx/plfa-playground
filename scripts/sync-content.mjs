@@ -68,14 +68,23 @@ function extractFrontmatter(source) {
   return title;
 }
 
-const chapterFiles = (await walk(contentRoot))
-  .filter((file) => chapterFileInfo(path.basename(file)))
-  .map((file) => ({
-    file,
-    relative: path.relative(contentRoot, file).split(path.sep).join("/"),
-  }));
+// A content root with no chapters is allowed: a blank starter has none, and
+// the site simply shows no content tree.
+let chapterFiles = [];
+try {
+  chapterFiles = (await walk(contentRoot))
+    .filter((file) => chapterFileInfo(path.basename(file)))
+    .map((file) => ({
+      file,
+      relative: path.relative(contentRoot, file).split(path.sep).join("/"),
+    }));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 if (!chapterFiles.length) {
-  throw new Error(`No .agda or .lagda.md files found under ${contentRoot}`);
+  console.warn(
+    `No .agda or .lagda.md files found under ${contentRoot}; the site will have no content.`,
+  );
 }
 
 const groups = new Map();
@@ -193,6 +202,9 @@ const manifest = {
   library: config.library,
   hash: hash.digest("hex").slice(0, 16),
   interfaces: hasInterfaces,
+  // Seeds the built-in playground document when set; absent means the app's
+  // own default sample.
+  playgroundSource: config.playgroundSource,
   importRewrite: rewrite
     ? {
         moduleRoot: rewrite.moduleRoot,
