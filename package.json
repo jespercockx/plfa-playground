@@ -1,5 +1,5 @@
 {
-  "name": "agda-playground",
+  "name": "plfa-playground",
   "version": "0.1.0",
   "description": "A complete Agda 2.8 editor and interaction environment running in the browser through WebAssembly.",
   "type": "module",
