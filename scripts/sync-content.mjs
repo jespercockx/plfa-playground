@@ -131,6 +131,16 @@ for (const entry of await readdir(outputRoot)) {
   await rm(path.join(outputRoot, entry), { recursive: true, force: true });
 }
 
+// The precompiled interface index is optional: it only exists after
+// `precompile:content` has run. Advertising its presence lets the app skip a
+// request that would 404 on a site without any precompiled interfaces.
+const hasInterfaces = await stat(
+  path.join(outputRoot, "interfaces", "manifest.json"),
+).then(
+  () => true,
+  () => false,
+);
+
 const zip = new JSZip();
 const rewrite = config.importRewrite ?? null;
 const zipEntries = [];
@@ -182,6 +192,7 @@ const manifest = {
   license: config.license,
   library: config.library,
   hash: hash.digest("hex").slice(0, 16),
+  interfaces: hasInterfaces,
   importRewrite: rewrite
     ? {
         moduleRoot: rewrite.moduleRoot,
