@@ -58,6 +58,29 @@ The optional `importRewrite` feature rewrites a set of standard-library imports
 onto narrow adapter modules for faster checking; it is off by default (identity)
 and is documented with the worked example.
 
+## Standard-library interfaces
+
+Agda compiles a standard-library module from source unless it finds a
+precompiled interface (`.agdai`) for it. A broad import such as `import Data.Nat`
+pulls in a large part of the library, which takes minutes the first time. The
+`interfaces` setting in `playground.config.json` fetches those files on demand
+instead. Agda itself decides which interface it wants, so only the ones a check
+needs are downloaded, one request per file.
+
+- `{ "mode": "none" }` (default): never fetch; compile from source.
+- `{ "mode": "same-origin" }`: serve the tree from this site under
+  `/stdlib-interfaces/<agdaVersion>/`. `sync:runtime` copies it from the dist
+  submodule when the dist repo publishes it, so the site has to carry the full
+  tree.
+- `{ "mode": "cross-origin", "baseUrl": "https://…" }`: fetch the tree from
+  `baseUrl`, for pointing at the dist repo's published interfaces instead of
+  vendoring them.
+
+Interfaces are version-specific: the tree must be built by the same Agda version
+the site ships. A file that is missing or does not match the sources is ignored
+and Agda compiles that module normally, so a partial or stale tree costs time,
+never correctness.
+
 ## Build and verify
 
 ```sh

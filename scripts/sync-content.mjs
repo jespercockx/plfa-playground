@@ -34,6 +34,24 @@ const config = JSON.parse(
 // `module Hello where` lives at the include root.
 const modulePrefix = config.modulePrefix ?? config.library;
 
+// Where the browser gets Agda's precompiled standard-library interfaces from:
+//   none         - never fetch them; Agda compiles anything it needs from source
+//   same-origin  - serve them from this site under /stdlib-interfaces
+//   cross-origin - fetch them from `baseUrl` (e.g. the dist repo's published tree)
+const interfaceModes = ["none", "same-origin", "cross-origin"];
+const interfaces = config.interfaces ?? { mode: "none" };
+if (!interfaceModes.includes(interfaces.mode)) {
+  throw new Error(
+    `interfaces.mode must be one of ${interfaceModes.join(", ")}; ` +
+      `got ${JSON.stringify(interfaces.mode)}`,
+  );
+}
+if (interfaces.mode === "cross-origin" && !interfaces.baseUrl) {
+  throw new Error(
+    'interfaces.baseUrl is required when interfaces.mode is "cross-origin"',
+  );
+}
+
 const chapterExtensions = [".lagda.md", ".lagda", ".agda"];
 // Root-level files belong to a synthetic group with this id. The UI renders it
 // without a group header, so a content root with a single ungrouped file looks
@@ -201,7 +219,12 @@ const manifest = {
   license: config.license,
   library: config.library,
   hash: hash.digest("hex").slice(0, 16),
-  interfaces: hasInterfaces,
+  contentInterfaces: hasInterfaces,
+  // Where the browser fetches precompiled standard-library interfaces.
+  interfaces: {
+    mode: interfaces.mode,
+    baseUrl: interfaces.baseUrl ?? null,
+  },
   // Seeds the built-in playground document when set; absent means the app's
   // own default sample.
   playgroundSource: config.playgroundSource,

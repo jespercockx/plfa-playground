@@ -3,5 +3,8 @@
   "library": "playground",
   "modulePrefix": "",
   "playgroundSource": "",
-  "source": "https://github.com/jespercockx/agda-playground"
+  "source": "https://github.com/jespercockx/agda-playground",
+  "interfaces": {
+    "mode": "none"
+  }
 }

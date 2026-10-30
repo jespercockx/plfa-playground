@@ -30,6 +30,10 @@ vite.config.js.timestamp-*
 /static/agda-data.zip
 /static/agda-stdlib-*.zip
 
+# Standard-library interfaces, populated by scripts/sync-runtime.mjs in the
+# same-origin mode; other modes fetch them over the network instead.
+/static/stdlib-interfaces/
+
 # Generated content output; the sources live in content/ and the precompiled
 # interface archives under static/content/interfaces/ are kept for the fast path.
 /static/content/*

@@ -70,6 +70,7 @@ const {
   agdaStdlibZip,
   projectZip,
   cacheNamespace,
+  interfaceBaseUrl,
 } = await new Promise<DriveWorkerInitObject>((r) => {
   addEventListener(
     "message",
@@ -307,6 +308,45 @@ const origDriveOpen = drive.open.bind(drive);
 drive.open = (fdDir: number, path: string, oflags: number, fdflags: number) =>
   origDriveOpen(fdDir, removeTrailingDotDots(path), oflags, fdflags);
 
+// Agda only discovers interfaces through the filesystem, so when it asks for a
+// standard-library `.agdai` that is not in the drive we fetch that one file on
+// demand and serve it. If the fetch fails Agda simply compiles from source.
+const stdlibBuildPrefix = "/stdlib/_build/";
+const unavailableInterfaces = new Set<string>();
+
+function interfaceRelativePath(absolute: string) {
+  if (!absolute.startsWith(stdlibBuildPrefix) || !absolute.endsWith(".agdai"))
+    return null;
+  const marker = absolute.indexOf("/agda/", stdlibBuildPrefix.length);
+  return marker < 0 ? null : absolute.slice(marker + "/agda/".length);
+}
+
+async function fetchInterface(fdDir: number, path: string) {
+  if (!interfaceBaseUrl) return;
+  const directory = drive.openMap.get(fdDir) as
+    | { fullPath?: (path: string) => string }
+    | undefined;
+  const absolute = directory?.fullPath
+    ? directory.fullPath(removeTrailingDotDots(path))
+    : path;
+  const relative = interfaceRelativePath(absolute);
+  if (!relative || drive.fs[absolute]) return;
+
+  const url = `${interfaceBaseUrl}/${relative}`;
+  if (unavailableInterfaces.has(url)) return;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      unavailableInterfaces.add(url);
+      return;
+    }
+    fsAssign(absolute, new Uint8Array(await response.arrayBuffer()), drive.fs);
+  } catch (error) {
+    unavailableInterfaces.add(url);
+    console.warn(`Could not fetch Agda interface ${relative}`, error);
+  }
+}
+
 function cacheWrittenInterface(fd: number) {
   const openFile = drive.openMap.get(fd) as
     { file?: Runno.WASIFile } | undefined;
@@ -399,6 +439,11 @@ async function mainLoop() {
 
     if (req.method === "write" || req.method === "pwrite") {
       req.args[1] = base64ToUint8Array(req.args[1]);
+    }
+    // Agda reaches for interfaces with path-open and path-stat; make sure the
+    // one it asks for is present before answering.
+    if (req.method === "open" || req.method === "pathStat") {
+      await fetchInterface(req.args[0], req.args[1]);
     }
     // console.warn('DRIVE <--', req)
     let res = driveProxy[req.method](...req.args);

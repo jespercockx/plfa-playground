@@ -50,4 +50,6 @@ export interface DriveWorkerInitObject {
   agdaStdlibZip: ArrayBuffer | null;
   projectZip: ArrayBuffer | null;
   cacheNamespace: string;
+  /** URL prefix to fetch missing standard-library interfaces from, or null. */
+  interfaceBaseUrl: string | null;
 }

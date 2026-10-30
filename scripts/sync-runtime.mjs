@@ -7,7 +7,7 @@
 // version under `vendor/`. Every submodule carries its own `dist-manifest.json`;
 // this script discovers them (depth-first, ignoring `.git`) so adding a version
 // needs no changes here.
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +23,12 @@ const manifestOutput = path.join(
   "lib",
   "runtime-manifest.ts",
 );
+const config = JSON.parse(
+  await readFile(path.join(projectRoot, "playground.config.json"), "utf8"),
+);
+// Only `same-origin` needs the interface tree copied into `static/`; the
+// `cross-origin` mode fetches it from the configured URL instead.
+const syncInterfaces = (config.interfaces?.mode ?? "none") === "same-origin";
 
 const maxDiscoveryDepth = 3;
 
@@ -92,6 +98,61 @@ async function syncArtifact(source, expectedByteLength, label) {
   return { destination, copied: true };
 }
 
+/** Recursively copy a directory tree. */
+async function copyTree(source, destination) {
+  await mkdir(destination, { recursive: true });
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isDirectory()) await copyTree(from, to);
+    else if (entry.isFile()) await copyFile(from, to);
+  }
+}
+
+/**
+ * Copy a version's standard-library interface tree into
+ * `static/stdlib-interfaces/<agdaVersion>/` so the app can serve it same-origin.
+ * Only runs when the site config selects `same-origin`; the dist repo must
+ * publish the tree and describe it under `interfaces` in `dist-manifest.json`.
+ */
+async function syncInterfacesTree(directory, manifest) {
+  if (!syncInterfaces) return false;
+  const spec = manifest.interfaces;
+  if (!spec?.dir) {
+    console.warn(
+      `${manifest.agdaVersion}: dist-manifest.json has no \`interfaces\` ` +
+        "directory, so same-origin interfaces are unavailable",
+    );
+    return false;
+  }
+  const destination = path.join(
+    staticRoot,
+    "stdlib-interfaces",
+    manifest.agdaVersion,
+  );
+  const source = path.join(directory, spec.dir);
+  try {
+    await stat(source);
+  } catch {
+    console.warn(
+      `${manifest.agdaVersion}: ${spec.dir} is missing; ` +
+        "same-origin interfaces are unavailable",
+    );
+    return false;
+  }
+  const stampPath = path.join(destination, ".stamp");
+  const stamp = `${spec.dir}:${spec.count ?? ""}:${spec.byteLength ?? ""}`;
+  try {
+    if ((await readFile(stampPath, "utf8")) === stamp) return false;
+  } catch {
+    // Not copied yet.
+  }
+  await rm(destination, { recursive: true, force: true });
+  await copyTree(source, destination);
+  await writeFile(stampPath, stamp);
+  return true;
+}
+
 async function readVersion(manifestPath) {
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const directory = path.dirname(manifestPath);
@@ -116,11 +177,12 @@ async function readVersion(manifestPath) {
     manifest.stdlib.byteLength,
     "Agda standard library archive",
   );
+  const interfaces = await syncInterfacesTree(directory, manifest);
 
   return {
     manifest,
     copied: [wasm, compressed, data, stdlib].filter((entry) => entry.copied)
-      .length,
+      .length + (interfaces ? 1 : 0),
     entry: {
       agdaVersion: manifest.agdaVersion,
       stdlibVersion: manifest.stdlibVersion,
