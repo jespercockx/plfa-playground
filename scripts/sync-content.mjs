@@ -26,7 +26,19 @@ const config = JSON.parse(
   await readFile(path.join(projectRoot, "playground.config.json"), "utf8"),
 );
 
+// Directory prefix under which content modules are placed in the project
+// archive. Agda derives a module's name from its path relative to the include
+// root, so this must match what the sources declare (PLFA declares
+// `module plfa.part1.Naturals where`, hence the `plfa` prefix). Defaults to the
+// library name; set it to "" so a `content/Hello.agda` that says
+// `module Hello where` lives at the include root.
+const modulePrefix = config.modulePrefix ?? config.library;
+
 const chapterExtensions = [".lagda.md", ".lagda", ".agda"];
+// Root-level files belong to a synthetic group with this id. The UI renders it
+// without a group header, so a content root with a single ungrouped file looks
+// like a plain list of chapters.
+const rootGroupId = "content";
 // Fixed timestamp so repeated runs produce byte-identical archives.
 const archiveDate = new Date(Date.UTC(2020, 0, 1));
 
@@ -70,7 +82,7 @@ const groups = new Map();
 for (const { file, relative } of chapterFiles) {
   const segments = relative.split("/");
   const info = chapterFileInfo(segments.at(-1));
-  const groupId = segments.length === 1 ? "content" : segments[0];
+  const groupId = segments.length === 1 ? rootGroupId : segments[0];
   const chapterId =
     segments.length === 1
       ? info.name
@@ -80,9 +92,10 @@ for (const { file, relative } of chapterFiles) {
   const chapter = {
     id: chapterId,
     name: info.name,
+    fileName: segments.at(-1),
     title: title ?? info.name,
     sourcePath: `/content/${relative}`,
-    modulePath: `/${config.library}/${relative}`,
+    modulePath: `/${modulePrefix ? `${modulePrefix}/` : ""}${relative}`,
     relative,
     source,
   };
@@ -180,9 +193,11 @@ const manifest = {
   groups: orderedGroupIds.map((groupId) => ({
     id: groupId,
     title: config.groups?.[groupId] ?? groupId,
+    flat: groupId === rootGroupId,
     chapters: groups.get(groupId).map((chapter) => ({
       id: chapter.id,
       name: chapter.name,
+      fileName: chapter.fileName,
       title: chapter.title,
       sourcePath: chapter.sourcePath,
       modulePath: chapter.modulePath,

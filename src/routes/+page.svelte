@@ -67,6 +67,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   interface ContentChapter {
     id: string;
     name: string;
+    fileName: string;
     title: string;
     sourcePath: string;
     modulePath: string;
@@ -75,6 +76,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   interface ContentGroup {
     id: string;
     title: string;
+    flat?: boolean;
     chapters: ContentChapter[];
   }
 
@@ -146,11 +148,22 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   const selectedChapterIndex = $derived(
     contentChapters.findIndex((chapter) => chapter.id === selectedChapterId),
   );
+  const selectedChapterIsLiterate = $derived(
+    selectedChapter ? !selectedChapter.fileName.endsWith(".agda") : true,
+  );
   const chapterHtml = $derived(
-    chapterMarkdown ? renderChapterMarkdown(chapterMarkdown) : "",
+    chapterMarkdown
+      ? selectedChapterIsLiterate
+        ? renderChapterMarkdown(chapterMarkdown)
+        : renderPlainAgda(chapterMarkdown)
+      : "",
   );
   const chapterCodeBlocks = $derived.by(() => {
     const ranges: Array<{ from: number; to: number }> = [];
+    if (!selectedChapterIsLiterate) {
+      ranges.push({ from: 0, to: chapterMarkdown.length });
+      return ranges;
+    }
     const opening = /^```agda[^\n]*\n/gm;
     for (const match of chapterMarkdown.matchAll(opening)) {
       const from = (match.index ?? 0) + match[0].length;
@@ -161,7 +174,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   });
   const editorFileName = $derived(
     workspaceMode === "content" && selectedChapter
-      ? `${selectedChapter.name}.lagda.md`
+      ? selectedChapter.fileName
       : "Main.agda",
   );
 
@@ -502,6 +515,14 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     return error instanceof Error ? error.message : String(error);
   }
 
+  function renderPlainAgda(source: string) {
+    const escaped = source
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    return `<pre class="agda-source-block" data-agda-block="0" data-source-offset="0" tabindex="0" title="Jump to this block in the source"><code class="language-agda">${escaped}</code></pre>`;
+  }
+
   function renderChapterMarkdown(source: string) {
     let blockIndex = 0;
     const codeOffsets = [...source.matchAll(/^```agda[^\n]*\n/gm)].map(
@@ -639,13 +660,10 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   }
 
   function contentInterfaceUrls(chapter: ContentChapter) {
-    const index = contentChapters.findIndex(
-      (candidate) => candidate.id === chapter.id,
-    );
-    if (index < 0) return [];
-    const archives =
-      contentInterfaceManifest?.chapters[chapter.id] ??
-      contentChapters.slice(0, index + 1).map((candidate) => candidate.id);
+    // With no precompiled interface index there is nothing to mount; the
+    // chapter (and the standard library) recompile in the browser instead.
+    if (!contentInterfaceManifest) return [];
+    const archives = contentInterfaceManifest.chapters[chapter.id] ?? [];
     return archives.map(
       (archive) =>
         `${asset(`/content/interfaces/${archive}.zip`)}?cache=dependency-closures-v1-20260831`,
@@ -759,7 +777,11 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
       const source = localStorage.getItem(storageKey) ?? originalSource;
       chapterMarkdown = source;
       editor?.dispatch({
-        effects: sourceLanguageCompartment.reconfigure(literateAgdaLanguage()),
+        effects: sourceLanguageCompartment.reconfigure(
+          chapter.fileName.endsWith(".agda")
+            ? agdaSourceLanguage()
+            : literateAgdaLanguage(),
+        ),
       });
       controller.setDocument(source, chapter.modulePath, storageKey);
       readerContent?.scrollTo({ top: 0 });
@@ -912,23 +934,25 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
         {#if contentManifest}
           <div class="content-tree">
             {#each contentManifest.groups as group}
-              <button
-                class="tree-part"
-                onclick={() =>
-                  (expandedGroups = {
-                    ...expandedGroups,
-                    [group.id]: !expandedGroups[group.id],
-                  })}
-                aria-expanded={Boolean(expandedGroups[group.id])}
-                title={group.title}
-              >
-                {#if expandedGroups[group.id]}<ChevronDown
-                    size={12}
-                  />{:else}<ChevronRight size={12} />{/if}<span
-                  >{group.id.toUpperCase()}</span
+              {#if !group.flat}
+                <button
+                  class="tree-part"
+                  onclick={() =>
+                    (expandedGroups = {
+                      ...expandedGroups,
+                      [group.id]: !expandedGroups[group.id],
+                    })}
+                  aria-expanded={Boolean(expandedGroups[group.id])}
+                  title={group.title}
                 >
-              </button>
-              {#if expandedGroups[group.id]}
+                  {#if expandedGroups[group.id]}<ChevronDown
+                      size={12}
+                    />{:else}<ChevronRight size={12} />{/if}<span
+                    >{group.id.toUpperCase()}</span
+                  >
+                </button>
+              {/if}
+              {#if group.flat || expandedGroups[group.id]}
                 {#each group.chapters as chapter}
                   <button
                     class:active={workspaceMode === "content" &&
@@ -938,7 +962,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
                     disabled={isBusy}
                     title={chapter.title}
                   >
-                    <FileText size={14} /><span>{chapter.name}.lagda.md</span>
+                    <FileText size={14} /><span>{chapter.fileName}</span>
                   </button>
                 {/each}
               {/if}
