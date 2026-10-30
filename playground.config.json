@@ -42,8 +42,12 @@
       "ContextualEquivalence"
     ]
   },
+  "runtime": {
+    "repository": "jespercockx/agda-als-dist",
+    "releases": ["v2.8.0-als-e6541f8"]
+  },
   "interfaces": {
-    "mode": "none"
+    "mode": "same-origin"
   },
   "importRewrite": {
     "moduleRoot": "/plfa/",

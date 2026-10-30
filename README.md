@@ -25,14 +25,15 @@ MB over the wire with gzip); code does not need to be sent to a server.
 ## Run locally
 
 ```sh
-git submodule update --init --recursive
 npm ci
 npm run dev
 ```
 
 The Agda/ALS runtime binaries are not stored in Git; `npm run dev` (and
-`npm run build`) copy them from the `vendor/agda-als-dist` submodule into
-`static/` before starting Vite.
+`npm run build`) download them from the pinned
+[`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist)
+release into `static/` before starting Vite, caching the verified downloads
+under `.runtime-cache/`.
 
 Open <http://localhost:5173>. Press Ctrl/Cmd+Enter to check the module. The
 first visit downloads and initializes the compiler; subsequent visits can use
@@ -64,10 +65,10 @@ npm run build
 ```
 
 The static site is written to `build/`. The Agda/ALS runtime binaries are not
-checked in; they are populated from the
-[`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist)
-submodule under `vendor/` by `scripts/sync-runtime.mjs` (run automatically by
-`npm run dev` and `npm run build`). See that repository's
+checked in; they are downloaded from the release pinned under `runtime` in
+`playground.config.json` by `scripts/sync-runtime.mjs` (run automatically by
+`npm run dev` and `npm run build`), which verifies every file against the
+release's `dist-manifest.json`. See that repository's
 [`UPDATING.md`](https://github.com/jespercockx/agda-als-dist/blob/main/UPDATING.md)
 to rebuild the WASM executable from pinned sources.
 

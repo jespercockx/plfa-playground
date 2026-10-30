@@ -24,11 +24,15 @@ node_modules
 # Vite
 vite.config.js.timestamp-*
 
-# Runtime binaries, populated by scripts/sync-runtime.mjs from vendor/agda-als-dist
+# Runtime binaries, downloaded by scripts/sync-runtime.mjs from the pinned
+# agda-als-dist release.
 /static/als-*.wasm
 /static/als-*.wasm.gz
 /static/agda-data.zip
 /static/agda-stdlib-*.zip
+
+# Verified download cache (keyed by SHA-256), reused across builds.
+/.runtime-cache/
 
 # Standard-library interfaces, populated by scripts/sync-runtime.mjs in the
 # same-origin mode; other modes fetch them over the network instead.

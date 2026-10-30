@@ -31,11 +31,17 @@ jobs:
           # On workflow_run, default to the commit CI validated; manual runs
           # use the ref they were dispatched with.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          submodules: recursive
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
+      - name: Cache the runtime download
+        uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: runtime-${{ hashFiles('playground.config.json') }}
+          restore-keys: |
+            runtime-
       - run: npm ci
       - run: npm run build
         env:
