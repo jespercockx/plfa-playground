@@ -10,6 +10,6 @@ The compiler is built from
 and [`agda-web/agda`](https://github.com/agda-web/agda). The bundled standard
 library is from [`agda/agda-stdlib`](https://github.com/agda/agda-stdlib).
 The prebuilt WASM artifacts and their pinned revisions are distributed by
-[`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist) and
-checked out under `vendor/agda-als-dist`. Their respective upstream licenses
-apply to those artifacts.
+[`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist) as
+GitHub release assets; `scripts/sync-runtime.mjs` downloads and checksum-verifies
+them at build time. Their respective upstream licenses apply to those artifacts.
