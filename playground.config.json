@@ -1,0 +1,6 @@
+{
+  "title": "Agda Playground",
+  "library": "playground",
+  "modulePrefix": "",
+  "source": "https://github.com/jespercockx/agda-playground"
+}

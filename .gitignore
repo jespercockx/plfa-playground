@@ -1,0 +1,37 @@
+node_modules
+/research
+/.build-tools
+/.build-tmp
+/.compiler-work
+/.compiler-work-stock
+/.compiler-cabal
+/.compiler-meta
+/.compiler-toolchain
+/.browser-tmp
+/.wrangler
+/*.deb
+/quietui.tar.gz
+
+# build output
+/build
+/.svelte-kit
+
+# env
+.env
+.env.*
+!.env.sample
+
+# Vite
+vite.config.js.timestamp-*
+
+# Runtime binaries, populated by scripts/sync-runtime.mjs from vendor/agda-als-dist
+/static/als-*.wasm
+/static/als-*.wasm.gz
+/static/agda-data.zip
+/static/agda-stdlib-*.zip
+
+# Generated content output; the sources live in content/ and the precompiled
+# interface archives under static/content/interfaces/ are kept for the fast path.
+/static/content/*
+!/static/content/interfaces/
+!/static/content/interfaces/**

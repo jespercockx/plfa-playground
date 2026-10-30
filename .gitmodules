@@ -1,0 +1,4 @@
+[submodule "vendor/agda-als-dist"]
+	path = vendor/agda-als-dist
+	url = https://github.com/jespercockx/agda-als-dist.git
+	branch = agda-2.8.0

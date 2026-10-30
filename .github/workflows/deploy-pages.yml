@@ -1,0 +1,57 @@
+name: Deploy to GitHub Pages
+
+# Runs after the CI workflow succeeds on master. Using `workflow_run`
+# (rather than a plain push trigger) guarantees the deploy only happens once
+# `npm run check`, `npm test`, and `npm run build` have passed. The CI
+# workflow name must match `workflows:` below.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment, but do not cancel an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # On workflow_run, default to the commit CI validated; manual runs
+          # use the ref they were dispatched with.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          submodules: recursive
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          # GitHub Pages serves a project site under /<repository-name>.
+          BASE_PATH: /${{ github.event.repository.name }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
