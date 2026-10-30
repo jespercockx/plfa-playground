@@ -341,6 +341,9 @@ async function fetchInterface(fdDir: number, path: string) {
       return;
     }
     fsAssign(absolute, new Uint8Array(await response.arrayBuffer()), drive.fs);
+    // Persist through the same IndexedDB cache as compiled interfaces, so a
+    // reload reuses them instead of re-fetching the closure.
+    dirtyCachePaths.add(absolute);
   } catch (error) {
     unavailableInterfaces.add(url);
     console.warn(`Could not fetch Agda interface ${relative}`, error);
