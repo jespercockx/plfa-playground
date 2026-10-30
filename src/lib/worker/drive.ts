@@ -214,7 +214,9 @@ async function restoreCachedFiles(database: IDBDatabase | null) {
 async function persistCachedFiles(database: IDBDatabase | null) {
   if (!database || dirtyCachePaths.size === 0) return;
   const records: CachedFile[] = [...dirtyCachePaths].flatMap((path) => {
-    const file = fs[path];
+    // Read through the drive, not the seed `fs`: Runno copies the object it is
+    // given, so files Agda creates (its interfaces) exist only on `drive.fs`.
+    const file = drive.fs[path];
     if (!file) return [];
     return [
       {
