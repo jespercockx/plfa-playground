@@ -27,13 +27,58 @@ describe("Agda completion", () => {
 });
 
 describe("content import rewrite", () => {
-  it("is the identity without a rewrite spec", () => {
-    const source = `module Main where
+  it("uses narrow modules without changing any source offsets", () => {
+    const source = `module plfa.part1.Sample where
+open import Function using (_∘_)
 open import Data.Product using (_×_)
+open import Data.Nat.Properties using (+-comm)
+import Relation.Binary.PropositionalEquality as Eq
+open Eq.≡-Reasoning
 answer = {!  !}
 `;
-    expect(
-      browserAgdaSource("/Main.agda", source, config.importRewrite),
-    ).toBe(source);
+    const browserSource = browserAgdaSource(
+      "/plfa/part1/Sample.lagda.md",
+      source,
+      config.importRewrite,
+    );
+    expect(browserSource).toHaveLength(source.length);
+    expect(browserSource.indexOf("answer")).toBe(source.indexOf("answer"));
+    expect(browserSource).toContain("open import plfa.Fun");
+    expect(browserSource).toContain("open import plfa.Product");
+    expect(browserSource).toContain("open import plfa.NatProps");
+    expect(browserSource).toContain("plfa.browser.PropositionalEquality");
+  });
+
+  it("omits reference-only stdlib imports without moving later text", () => {
+    const source = `module plfa.part1.Sample where
+
+# Standard library
+
+\`\`\`agda
+import Data.Product using (_×_; proj₁; proj₂)
+\`\`\`
+
+# Unicode
+ending : Set
+ending = Set
+`;
+    const browserSource = browserAgdaSource(
+      "/plfa/part1/Sample.lagda.md",
+      source,
+      config.importRewrite,
+    );
+    expect(browserSource).toHaveLength(source.length);
+    expect(new TextEncoder().encode(browserSource)).toHaveLength(
+      new TextEncoder().encode(source).length,
+    );
+    expect(browserSource.indexOf("ending")).toBe(source.indexOf("ending"));
+    expect(browserSource).toContain("```agda\n--port Data.Product");
+  });
+
+  it("never transforms ordinary playground files", () => {
+    const source = "open import Data.Product\n";
+    expect(browserAgdaSource("/Main.agda", source, config.importRewrite)).toBe(
+      source,
+    );
   });
 });

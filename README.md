@@ -1,202 +1,62 @@
-# Agda Playground
+# PLFA Playground
 
-A template for building an interactive, type-checkable Agda website that runs
-entirely in the browser. Drop `.agda` or `.lagda.md` files into `content/`, and
-GitHub Pages serves an editor plus the Agda Language Server compiled to
-WebAssembly — code never leaves the visitor's machine.
+An interactive, type-checkable edition of *Programming Language Foundations in
+Agda* that runs entirely in the browser. The Agda 2.8 compiler and language
+server are a 33 MB WASI executable (about 10 MB over the wire with gzip); code
+does not need to be sent to a server.
 
-This repository is the canonical starter. For a worked example with a full book
-of content, see
-[`jespercockx/plfa-playground`](https://github.com/jespercockx/plfa-playground).
+This repository is the **worked example** of the
+[`jespercockx/agda-playground`](https://github.com/jespercockx/agda-playground)
+template: the app is the template's, and the content is the PLFA book. For the
+template itself — content authoring, configuration, runtime distribution, and
+interfaces — see that repository's README.
 
 ## What works
 
 - Agda type checking, compiler highlighting, goals, errors, and warnings
-- Language-server hover types plus buffer- and import-aware name completion
-- Agda/Emacs-style Unicode composition (`\to` → `→`, `\all` → `∀`, …)
+- Language-server hover types plus buffer/import-aware name completion
+- Agda/Emacs-style Unicode composition (`\to` → `→`, `\all` → `∀`, etc.)
+- Goal type and context inspection
 - Give, Refine, and case-split interactions that edit and re-check the source
 - Top-level type inference and normalization
-- The bundled Agda standard library
-- Browser-local autosave and persistent source/interface caches (IndexedDB)
-- Responsive layout and a resizable goal inspector
+- Bundled Agda 2.8.0 and standard library 2.3
+- The 25 PLFA chapters, each native `.lagda.md` rendered beside its editable,
+  type-checkable literate source, with browser-local progress
+- Autosave in browser storage, keyboard checking, responsive layout, and a
+  resizable goal inspector
+- Persistent, versioned source and interface caches in IndexedDB
+- The standard Emacs `agda2-mode` interaction chords (`C-c C-l`, `C-c C-f`,
+  `C-c C-SPC`, `C-c C-r`, `C-c C-c`, `C-c C-t`, `C-c C-e`, `C-c C-d`, and
+  `C-c C-n`)
 
-## Quickstart
-
-1. Use this template (or clone it) into a new repository.
-2. Add your sources to `content/`. The starter ships with none, so the editor
-   opens an empty `Main.agda`.
-3. Run it locally:
-
-   ```sh
-   npm ci
-   npm run dev
-   ```
-
-   The first run downloads the pinned Agda runtime (see
-   [Runtime and distribution](#runtime-and-distribution)) and caches it under
-   `.runtime-cache/`. Open <http://localhost:5173> and press Ctrl/Cmd+Enter to
-   check the module.
-
-4. Enable GitHub Pages: **Settings → Pages → Source = GitHub Actions**, and
-   **Settings → Actions → General → Workflow permissions = Read and write**.
-   Every push to `master` that passes CI is deployed to
-   `https://<owner>.github.io/<repository>/`.
-
-## Content
-
-Sources live in `content/` and are described by `playground.config.json`.
-
-- `.agda` files are shown as a single code block; `.lagda.md` files are rendered
-  as Markdown with their ` ```agda ` blocks editable and checkable.
-- A Markdown file may start with frontmatter whose `title:` sets its display
-  name:
-
-  ```markdown
-  ---
-  title: Natural numbers
-  ---
-  ```
-
-- Files in the content root belong to no group; files in a subdirectory form a
-  group named after that directory. For example `content/part1/Foo.agda` is in
-  group `part1`; a root with only top-level files renders without any group
-  headers.
-- Groups are ordered by the key order of `groups` in `playground.config.json`,
-  then any extra groups alphabetically. Within a group, chapters follow the
-  `order` list, then alphabetically.
+## Run locally
 
 ```sh
-npm run sync:content
+npm ci
+npm run dev
 ```
 
-regenerates the display sources, the Agda project archive, and the content index
-under `static/content/`. `npm run dev` and `npm run build` run it automatically.
+The Agda/ALS runtime binaries are not stored in Git; `npm run dev` (and
+`npm run build`) download them from the pinned
+[`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist)
+release into `static/` before starting Vite, caching the verified downloads and
+the standard-library interface tree under `.runtime-cache/` and `static/`.
 
-### Module names
+Open <http://localhost:5173>. Press Ctrl/Cmd+Enter to check the chapter. The
+first visit downloads and initializes the compiler; subsequent visits use the
+browser cache.
 
-Agda derives a module's name from its path relative to the library root, so the
-path inside the project archive has to match the `module … where` header you
-write. `modulePrefix` sets the directory the content is placed under:
+The app requires `SharedArrayBuffer`, so the page must be cross-origin isolated
+with:
 
-- The starter sets `"modulePrefix": ""`, so `content/Main.agda` declares
-  `module Main where`.
-- A project with modules named `mylib.Widget` would set `"modulePrefix": "mylib"`
-  and place the file at `content/Widget.agda`.
-
-When `modulePrefix` is omitted it defaults to `library`.
-
-### Configuration reference
-
-`playground.config.json` keys:
-
-| Key | Purpose |
-| --- | --- |
-| `title` | Site title shown in the UI |
-| `library` | Agda library name; names the generated `<library>.agda-lib` and is the default `modulePrefix` |
-| `modulePrefix` | Directory content modules are placed under (`""` for the root) |
-| `source` | Upstream source URL, linked in the footer |
-| `license`, `licenseFile` | License label and the file to copy into `static/content/` for display |
-| `groups` | Display titles for content directories |
-| `order` | Explicit chapter order per group |
-| `playgroundSource` | Initial text of the built-in editor document; `""` opens a blank `Main.agda` |
-| `dependencies` | Agda library dependencies of the generated project (default `["standard-library"]`) |
-| `runtime` | Which `agda-als-dist` release(s) to download (see below) |
-| `interfaces` | Standard-library interface mode (see below) |
-| `importRewrite` | Optional import-rewrite map (see below) |
-
-### Optional: import rewriting
-
-If your sources import broad standard-library modules, you can rewrite those
-imports onto narrow adapter modules for faster checking. Each adapter is an
-ordinary checked Agda module; the displayed source stays the original text.
-Because Agda reports positions against the displayed text, every replacement
-module name must be **exactly the same UTF-8 width** as the name it replaces, so
-that ranges, highlighting, errors, goals, and editor scroll synchronization stay
-aligned.
-
-This is off by default (identity). The worked example
-([`plfa-playground`](https://github.com/jespercockx/plfa-playground)) shows a full
-`importRewrite` spec: a `modules` map of adapter sources, an `imports` map of
-`[from, to]` pairs, optional `conditionalImports`, and `stripSections`.
-
-## Runtime and distribution
-
-The Agda compiler and language server are a 33 MB WASI executable (about 10 MB
-over the wire as gzip). It is **not** committed to this repository. Instead,
-`runtime` in `playground.config.json` pins one or more releases of
-[`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist), and
-`scripts/sync-runtime.mjs` downloads them:
-
-```json
-"runtime": {
-  "repository": "jespercockx/agda-als-dist",
-  "releases": ["v2.8.0-als-e6541f8"]
-}
+```text
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
 ```
 
-Before `npm run dev` and `npm run build`, the script fetches each release's
-`dist-manifest.json`, checks every artifact against the byte length and SHA-256
-it records, and copies them into `static/`. Downloads are cached under
-`.runtime-cache/` (gitignored), so later builds are offline; CI caches the same
-directory.
-
-Add `"manifestSha256": "<hash>"` (per release, or at the top level for a single
-release) to authenticate the tag itself by pinning the manifest bytes. It is
-optional: without it the manifest is fetched on every run and only the artifact
-hashes inside it are trusted.
-
-To bump the runtime, change the tag in `runtime.releases` (and update
-`manifestSha256` if you use it). Only **Agda 2.8.0 and later** are supported:
-earlier releases predate the `--setup` primitive installer and the
-`_build/<version>/agda/` interface layout the runtime relies on. See the dist
-repo's [`UPDATING.md`](https://github.com/jespercockx/agda-als-dist/blob/main/UPDATING.md)
-for how a release is produced.
-
-For an air-gapped mirror or local testing, `PLAYGROUND_RUNTIME_BASE_URL`
-overrides the GitHub download base, with the release tag appended.
-
-## Standard-library interfaces
-
-Agda recompiles a standard-library module from source unless it finds a
-precompiled interface (`.agdai`) for it, and a broad import such as
-`import Data.Nat` pulls in a large part of the library — minutes on the first
-check. The `interfaces` setting fetches those files on demand instead: Agda
-decides which interface it wants, and only the ones a check needs are fetched,
-one request per file.
-
-- `{ "mode": "same-origin" }` — what this starter ships. `sync:runtime`
-  downloads the release's interface archive at build time and extracts it into
-  `static/stdlib-interfaces/<agdaVersion>/`; the site serves it and therefore
-  carries the whole tree (about 190 MB of files). Reloads reuse the interfaces
-  from IndexedDB and make no further requests.
-- `{ "mode": "none" }` — never fetch; compile everything from source. Omitted
-  `interfaces` behaves like this.
-- `{ "mode": "cross-origin", "baseUrl": "https://…" }` — fetch each interface
-  from `baseUrl` at runtime. `baseUrl` must be a **CORS host** serving the tree
-  as `<baseUrl>/src/<Module>.agdai`. A GitHub release asset will not work:
-  release downloads carry no `access-control-allow-origin`, so a cross-origin
-  isolated page cannot fetch them. Pages, `raw.githubusercontent.com`, and
-  jsDelivr do set the header.
-
-Interfaces are version-specific: the tree must be built by the same Agda version
-the site ships. A missing or mismatched file is ignored and Agda compiles that
-module normally, so a partial or stale tree costs time, never correctness.
-
-### Optional: precompiling site content
-
-The same idea applies to *your* content and the standard library it imports. With
-a native Agda of the matching version on `PATH`, the optional fast path
-precompiles per-chapter archives so the first visit does not type-check the
-standard library and every earlier chapter:
-
-```sh
-npm run precompile:content -- /path/to/agda-2.8.0
-```
-
-It refreshes the deduplicated archives under `static/content/interfaces/` and the
-dependency index. Skip it if you do not ship a native Agda of the pinned version,
-or if you prefer to keep your repository free of precompiled data; everything
-still works, just with a slower first check.
+GitHub Pages cannot set response headers, so the bundled
+`static/coi-serviceworker.js` supplies them, at the cost of one automatic reload
+on the first visit. Any static host that sends the two headers works too.
 
 ## Build and verify
 
@@ -206,84 +66,112 @@ npm test
 npm run build
 ```
 
-The static site is written to `build/`. The deploy workflow
-(`.github/workflows/deploy-pages.yml`) builds with `BASE_PATH=/<repository>` and
-publishes to GitHub Pages after CI passes.
+The static site is written to `build/`. The runtime is downloaded from the
+release pinned under `runtime` in `playground.config.json` by
+`scripts/sync-runtime.mjs` (run automatically by `npm run dev` and
+`npm run build`), which verifies every file against the release's
+`dist-manifest.json`. See the dist repository's
+[`UPDATING.md`](https://github.com/jespercockx/agda-als-dist/blob/main/UPDATING.md)
+to rebuild the WASM executable from pinned sources.
 
-With a local Chromium/Chrome available, the browser regression benchmark checks
-the content in a real browser:
+With a local Chromium/Chrome executable available, run the browser regression
+benchmark against every PLFA chapter with:
 
 ```sh
 npm run dev   # in another terminal
 PLAYGROUND_URL=http://127.0.0.1:5173 npm run benchmark:content
 ```
 
-Set `CHROME_EXECUTABLE` if Chrome is not on `PATH`; `CHAPTERS=A,B` narrows a run
-to named chapters.
+Set `CHROME_EXECUTABLE` when Chrome is not on `PATH`. `CHAPTERS=Naturals,Lambda`
+can narrow a diagnostic run; an unset `CHAPTERS` always covers the complete
+book.
 
 ## Architecture
 
-```text
-  ┌──────────────┐  LSP over a transport   ┌──────────────────┐
-  │  main thread │ ───────────────────────▶ │  ALS worker      │
-  │  CodeMirror  │                          │  Agda (WASI)     │
-  │  LSP client  │ ◀─────────────────────── │  stdio over SPSC │
-  └──────┬───────┘                          └────────┬─────────┘
-         │  drive requests (JSON)                     │  file syscalls
-         ▼                                            ▼
-  ┌────────────────────────────────────────────────────────────┐
-  │  drive worker — in-memory filesystem, stdlib, content,     │
-  │  IndexedDB cache, on-demand .agdai fetch (interfaces)      │
-  └────────────────────────────────────────────────────────────┘
-```
-
 The main thread hosts CodeMirror and an LSP client. A dedicated worker runs the
-Agda Language Server under WASI, and a second worker owns its in-memory
-filesystem together with the bundled standard library and your content. Shared
-single-producer/single-consumer (SPSC) buffers connect the workers without a
-remote backend; file contents cross that bridge as binary data rather than
-JSON/Base64.
+Agda Language Server under WASI, while a second worker owns its in-memory
+filesystem and the bundled standard library and content. Shared
+single-producer/single-consumer buffers connect the workers without a remote
+backend; file contents cross that bridge as binary data rather than JSON/Base64.
+See the template README for the full diagram.
 
 The compiler is unmodified, stock Agda. Checks reuse Agda's own interfaces and
-one long-lived interaction process.
+one long-lived interaction process. A single edit inside an existing goal uses
+Agda's standard `Cmd_give` path; declaration, import, multi-goal, and ambiguous
+edits always fall back to a complete `Cmd_load`, so changed code is never
+silently accepted from a stale result.
 
-## Limitations
+## PLFA responsiveness
 
-- **First-load download.** The first visit downloads the ~10 MB gzip wasm and the
-  primitive data archive; the browser caches them afterwards.
-- **First-visit reload.** The app needs `SharedArrayBuffer`, so the page must be
-  cross-origin isolated with `Cross-Origin-Opener-Policy: same-origin` and
-  `Cross-Origin-Embedder-Policy: require-corp`. GitHub Pages cannot set response
-  headers, so the bundled `static/coi-serviceworker.js` supplies them, at the
-  cost of one automatic reload on the first visit.
-- **Per-site build size.** With `interfaces.mode: "same-origin"` (the default)
-  every deployment carries the full ~190 MB interface tree, even if no visitor
-  imports the standard library. `cross-origin` (host nothing) and `none` (fetch
-  nothing) are the alternatives.
-- **Vite cap.** `vite` is held below 8.3 on purpose; see the comment in
-  `package.json`. Bumping it silently breaks the WASM worker.
+All 25 bundled PLFA chapters are compiled and exercised by the browser
+benchmark, not just `Naturals`. On the reference development machine, a real
+warm declaration edit averaged 3.01 s across the complete book (median 3.08 s,
+95th percentile 4.35 s, maximum 4.59 s), down from a 9.37 s baseline. Editing
+and checking an existing goal normally takes about 20–60 ms.
 
-## Hosting elsewhere
+The browser archive includes position-compatible PLFA adapters for a small set
+of broad standard-library imports. The displayed `.lagda.md` text remains the
+book's original source, while each replacement module name occupies exactly the
+same UTF-8 width so Agda ranges, highlighting, errors, goals, and document/code
+scroll synchronization stay aligned. These adapters are ordinary checked Agda
+modules, not compiler patches, and are described by the `importRewrite` block in
+`playground.config.json` (see the template README for the format).
 
-The build is a plain static site (`build/`), so any static host works. The only
-requirement is that pages are cross-origin isolated, either by sending the two
-COOP/COEP headers or by relying on the bundled `coi-serviceworker.js`. To deploy
-under a subpath, build with `BASE_PATH=/<subpath>`; all runtime URLs are
-base-aware.
+## Content pipeline
 
-## Repository layout
+Site content lives in `content/` (the 25 PLFA chapters under `part1/`, `part2/`,
+and `part3/`) and is described by `playground.config.json`. The pipeline runs
+automatically before `npm run dev` / `npm run build`, and can be run directly:
 
-```text
-content/                 your Agda sources
-playground.config.json   site configuration
-scripts/                 content and runtime pipelines
-src/                     the SvelteKit app
-static/                  generated and static assets
-.github/workflows/       CI and GitHub Pages deploy
+```sh
+npm run sync:content
 ```
+
+It writes the raw display sources, the Agda project archive, and the content
+index under `static/content/` (generated, not committed). With a native Agda
+2.8.0 on `PATH`, the optional fast path precompiles interfaces so first visits
+do not type-check the standard library and earlier chapters:
+
+```sh
+npm run precompile:content -- /path/to/agda-2.8.0
+```
+
+That refreshes the deduplicated per-chapter archives under
+`static/content/interfaces/` and the generated dependency index, so the browser
+mounts only the archives in the selected chapter's transitive import closure.
+The source-only standard-library archive therefore stays small for users who
+never open a chapter.
+
+## Bundling another local Agda library
+
+The browser drive can mount any ZIP containing sources, Agda interfaces, or
+both. Preserve the library's virtual paths in the archive: sources belong under
+their library root and generated interfaces under that root's
+`_build/2.8.0/agda/` directory. Use stored ZIP entries rather than deflate;
+Agda interfaces compress only slightly and are much faster to mount this way.
+
+Interfaces must be generated by Agda 2.8.0 with the same source files, include
+paths, library versions, and relevant flags used in the browser. Agda checks
+the hashes and safely ignores a stale or incompatible interface. The public
+`mountDriveArchives()` controller method is the runtime hook for future local
+library bundles. Browser-created source and newly generated interfaces are
+persisted in a versioned IndexedDB cache, and changed sources receive newer
+virtual modification times so Agda will reject stale interfaces normally.
+
+## Origins and credits
+
+The browser-native Agda playground began as
+[`agda-web/als-demo`](https://github.com/agda-web/als-demo) by Andy Pan. This
+repository started as a fork of
+[`SeungheonOh/plfa-playground`](https://github.com/SeungheonOh/plfa-playground)
+by [Seungheon Oh](https://github.com/SeungheonOh), who built the original
+in-browser PLFA playground on top of it — many thanks for that work. Its history
+has since been rebased onto the
+[`jespercockx/agda-playground`](https://github.com/jespercockx/agda-playground)
+template, which this repository extends with the PLFA content and configuration.
 
 ## License and notices
 
-The app is MIT (see [`LICENSE`](LICENSE)). The runtime artifacts, the bundled
-standard library, and the language server retain their own upstream licenses; see
-[`NOTICE.md`](NOTICE.md).
+The app is MIT (see [`LICENSE`](LICENSE)). The bundled PLFA content is
+redistributed under CC BY 4.0 (see `content/LICENSE` and [`NOTICE.md`](NOTICE.md));
+the runtime artifacts and standard library retain their upstream licenses.
