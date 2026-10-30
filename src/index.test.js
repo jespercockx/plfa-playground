@@ -28,12 +28,12 @@ describe("Agda completion", () => {
 
 describe("content import rewrite", () => {
   it("is the identity without a rewrite spec", () => {
-    const source = `module Hello where
+    const source = `module Main where
 open import Data.Product using (_×_)
 answer = {!  !}
 `;
     expect(
-      browserAgdaSource("/Hello.agda", source, config.importRewrite),
+      browserAgdaSource("/Main.agda", source, config.importRewrite),
     ).toBe(source);
   });
 });

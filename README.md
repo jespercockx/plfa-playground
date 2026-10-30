@@ -15,8 +15,8 @@ content, see
 ## Quickstart
 
 1. Use this template (or clone it) into a new repository.
-2. Put your sources under `content/`. A file `content/Hello.agda` that says
-   `module Hello where` is all you need to start.
+2. Add your sources to `content/`. The starter ships with none, so the editor
+   opens an empty `Main.agda`.
 3. Run it locally:
 
    ```sh
@@ -35,9 +35,10 @@ content, see
 ## Content
 
 Sources live in `content/` (`.agda` and `.lagda.md` files) and are described by
-`playground.config.json`. Files in the content root belong to no group; files in
-a subdirectory form a group named after that directory (for example
-`content/part1/Foo.agda` is in group `part1`).
+`playground.config.json`. The starter's `content/` is empty; add your own files.
+Files in the content root belong to no group; files in a subdirectory form a
+group named after that directory (for example `content/part1/Foo.agda` is in
+group `part1`).
 
 ```sh
 npm run sync:content
@@ -46,10 +47,11 @@ npm run sync:content
 regenerates the content archive and index under `static/content/`. `npm run dev`
 and `npm run build` run it automatically.
 
-`modulePrefix` in `playground.config.json` sets the directory the modules are
-placed under inside the Agda project, which must match the module names you
-write: the starter sets it to `""`, so `content/Hello.agda` declares
-`module Hello where`. A larger project whose modules are named, say,
+`playgroundSource` in `playground.config.json` sets the text the editor opens
+with; the starter sets it to `""` for a blank document. `modulePrefix` sets the
+directory the modules are placed under inside the Agda project, which must match
+the module names you write: the starter sets it to `""`, so `content/Main.agda`
+declares `module Main where`. A larger project whose modules are named, say,
 `mylib.Widget` would set `"modulePrefix": "mylib"`.
 
 The optional `importRewrite` feature rewrites a set of standard-library imports
