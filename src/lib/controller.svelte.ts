@@ -107,6 +107,10 @@ interface ContentImportRewrite {
 interface ContentManifest {
   hash: string;
   importRewrite?: ContentImportRewrite | null;
+  interfaces?: {
+    mode: "none" | "same-origin" | "cross-origin";
+    baseUrl: string | null;
+  } | null;
 }
 
 function withCacheBust(url: string, cacheBust: string) {
@@ -390,6 +394,15 @@ export class AgdaController {
     });
   }
 
+  // URL prefix the drive worker fetches missing standard-library interfaces
+  // from, or null when the config disables them.
+  private stdlibInterfaceBaseUrl(): string | null {
+    const config = this.contentManifest?.interfaces;
+    if (!config || config.mode === "none") return null;
+    if (config.mode === "cross-origin") return config.baseUrl ?? null;
+    return asset(`/stdlib-interfaces/${this.config.agdaVersion}`);
+  }
+
   async initDriveHostWorker(options: {
     builtin?: ArrayBuffer;
     stdlib?: ArrayBuffer;
@@ -413,6 +426,7 @@ export class AgdaController {
       // Invalidate the persistent drive cache when either the runtime
       // distribution or the site content changes.
       cacheNamespace: `als-dist-${runtimeManifest[0]?.agdaVersion ?? "unknown"}-content-${this.contentManifest?.hash ?? "none"}`,
+      interfaceBaseUrl: this.stdlibInterfaceBaseUrl(),
     });
 
     if (event.data !== "fs-ready") {

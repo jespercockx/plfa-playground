@@ -42,6 +42,9 @@
       "ContextualEquivalence"
     ]
   },
+  "interfaces": {
+    "mode": "none"
+  },
   "importRewrite": {
     "moduleRoot": "/plfa/",
     "modules": {

@@ -85,7 +85,11 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
     source: string;
     license: string;
     library: string;
-    interfaces?: boolean;
+    contentInterfaces?: boolean;
+    interfaces?: {
+      mode: "none" | "same-origin" | "cross-origin";
+      baseUrl: string | null;
+    };
     playgroundSource?: string;
     groups: ContentGroup[];
   }
@@ -460,7 +464,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
         contentManifest = manifest;
         expandedGroups = { [manifest.groups[0]?.id ?? ""]: true };
         selectedChapterId = manifest.groups[0]?.chapters[0]?.id ?? "";
-        if (manifest.interfaces) void loadContentInterfaceManifest();
+        if (manifest.contentInterfaces) void loadContentInterfaceManifest();
         applyConfiguredPlaygroundSource(manifest.playgroundSource);
       })
       .catch((error) => (chapterError = readableError(error)));
@@ -678,7 +682,7 @@ plus-zero (suc n) = cong suc {! plus-zero n !}
   }
 
   async function ensureContentInterfaces(chapter = selectedChapter) {
-    if (!chapter || !contentManifest?.interfaces) return Promise.resolve();
+    if (!chapter || !contentManifest?.contentInterfaces) return Promise.resolve();
     await loadContentInterfaceManifest();
     await controller.mountDriveArchives(contentInterfaceUrls(chapter));
   }
