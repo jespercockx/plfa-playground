@@ -1,188 +1,237 @@
-// Copies the Agda/ALS runtime artifacts out of the `vendor/` submodule(s) into
-// `static/`, and regenerates `src/lib/runtime-manifest.ts` from the dist repo's
-// `dist-manifest.json`.
+// Downloads the Agda/ALS runtime artifacts for the releases pinned in
+// `playground.config.json` and places them in `static/`, then regenerates
+// `src/lib/runtime-manifest.ts`.
 //
-// The distribution repository (jespercockx/agda-als-dist) uses one branch per
-// Agda release, so this template checks out one submodule per supported
-// version under `vendor/`. Every submodule carries its own `dist-manifest.json`;
-// this script discovers them (depth-first, ignoring `.git`) so adding a version
-// needs no changes here.
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+// The distribution repository (jespercockx/agda-als-dist) publishes one GitHub
+// release per Agda version, tagged `v<agda>-als-<sha>`. `runtime.releases` lists
+// the tags this site ships; each tag's `dist-manifest.json` describes the
+// artifacts, and every download is checked against the byte length and SHA-256
+// the manifest records. Downloaded files are cached under `.runtime-cache/`
+// (gitignored) so a warm checkout needs no network at all.
+//
+// The `manifestSha256` field (per release, or at the top level for the common
+// single-release case) authenticates the tag itself by pinning the manifest
+// bytes. It is optional: without it the manifest is fetched on every run and
+// only the artifact hashes inside it are trusted.
+//
+// `PLAYGROUND_RUNTIME_BASE_URL` overrides the GitHub download URL, with the
+// release tag appended — useful for testing or an air-gapped mirror.
+
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const projectRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
-const vendorRoot = path.join(projectRoot, "vendor");
+import { extractZip } from "./lib/zip.mjs";
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const staticRoot = path.join(projectRoot, "static");
-const manifestOutput = path.join(
-  projectRoot,
-  "src",
-  "lib",
-  "runtime-manifest.ts",
-);
+const cacheRoot = path.join(projectRoot, ".runtime-cache");
+const manifestOutput = path.join(projectRoot, "src", "lib", "runtime-manifest.ts");
+
 const config = JSON.parse(
   await readFile(path.join(projectRoot, "playground.config.json"), "utf8"),
 );
-// Only `same-origin` needs the interface tree copied into `static/`; the
-// `cross-origin` mode fetches it from the configured URL instead.
+
+const runtime = config.runtime;
+if (!runtime?.repository) {
+  throw new Error(
+    "playground.config.json must set `runtime.repository` (the dist repo) " +
+      "and `runtime.releases` (the release tags to download).",
+  );
+}
+if (!Array.isArray(runtime.releases) || runtime.releases.length === 0) {
+  throw new Error("playground.config.json must list at least one `runtime.releases` tag.");
+}
+
+// Only `same-origin` needs the interface tree extracted into `static/`; the
+// `cross-origin` mode fetches it from the configured URL at runtime instead.
 const syncInterfaces = (config.interfaces?.mode ?? "none") === "same-origin";
 
-const maxDiscoveryDepth = 3;
+const baseUrlOverride = process.env.PLAYGROUND_RUNTIME_BASE_URL?.replace(/\/+$/, "");
 
-/** Recursively locate `dist-manifest.json` files under `vendor/`. */
-async function findDistManifests(directory, depth) {
-  if (depth > maxDiscoveryDepth) return [];
-
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch {
-    return [];
+/** A release tag plus its optional manifest pin. */
+function normalizeRelease(entry) {
+  if (typeof entry === "string") {
+    return { tag: entry, manifestSha256: runtime.manifestSha256 };
   }
-
-  const found = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === ".git") continue;
-    const child = path.join(directory, entry.name);
-    const candidate = path.join(child, "dist-manifest.json");
-    try {
-      await stat(candidate);
-      found.push(candidate);
-    } catch {
-      found.push(...(await findDistManifests(child, depth + 1)));
-    }
-  }
-  return found;
+  return { tag: entry.tag, manifestSha256: entry.manifestSha256 ?? runtime.manifestSha256 };
 }
 
-function compareVersions(left, right) {
-  const a = left.split(".").map(Number);
-  const b = right.split(".").map(Number);
-  for (let index = 0; index < Math.max(a.length, b.length); index++) {
-    const delta = (a[index] ?? 0) - (b[index] ?? 0);
-    if (delta !== 0) return delta;
-  }
-  return 0;
+function releaseUrl(tag, asset) {
+  if (baseUrlOverride) return `${baseUrlOverride}/${tag}/${asset}`;
+  return `https://github.com/${runtime.repository}/releases/download/${tag}/${asset}`;
 }
 
-/** Copy `source` to `static/<basename>` unless an equally sized copy is present. */
-async function syncArtifact(source, expectedByteLength, label) {
-  let actualByteLength;
+async function fileSize(file) {
   try {
-    actualByteLength = (await stat(source)).size;
+    return (await stat(file)).size;
   } catch {
-    throw new Error(
-      `missing ${label} at ${path.relative(projectRoot, source)}; ` +
-        `run \`git submodule update --init --recursive\``,
-    );
+    return null;
   }
-  if (expectedByteLength != null && actualByteLength !== expectedByteLength) {
-    throw new Error(
-      `${label} is ${actualByteLength} bytes but dist-manifest.json expects ` +
-        `${expectedByteLength}; the submodule checkout is incomplete`,
-    );
-  }
-
-  const destination = path.join(staticRoot, path.basename(source));
-  try {
-    const existing = await stat(destination);
-    if (existing.size === actualByteLength) return { destination, copied: false };
-  } catch {
-    // Not present yet.
-  }
-
-  await copyFile(source, destination);
-  return { destination, copied: true };
 }
 
-/** Recursively copy a directory tree. */
-async function copyTree(source, destination) {
-  await mkdir(destination, { recursive: true });
-  for (const entry of await readdir(source, { withFileTypes: true })) {
-    const from = path.join(source, entry.name);
-    const to = path.join(destination, entry.name);
-    if (entry.isDirectory()) await copyTree(from, to);
-    else if (entry.isFile()) await copyFile(from, to);
+async function sha256File(file) {
+  return createHash("sha256").update(await readFile(file)).digest("hex");
+}
+
+async function downloadTo(url, destination) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`GET ${url} failed: ${response.status} ${response.statusText}`);
   }
+  await mkdir(path.dirname(destination), { recursive: true });
+  const partial = `${destination}.part`;
+  // Buffer the whole response before writing: Node's fetch applies socket
+  // backpressure for a slow Writable, and undici then trips an internal
+  // assertion when the connection closes mid-stream. The largest artifact is
+  // the ~170 MB interface archive, which fits comfortably in memory.
+  await writeFile(partial, Buffer.from(await response.arrayBuffer()));
+  await rename(partial, destination);
 }
 
 /**
- * Copy a version's standard-library interface tree into
- * `static/stdlib-interfaces/<agdaVersion>/` so the app can serve it same-origin.
- * Only runs when the site config selects `same-origin`; the dist repo must
- * publish the tree and describe it under `interfaces` in `dist-manifest.json`.
+ * Return a verified local copy of `url`, downloading it only when the cache has
+ * no file of the expected size under its content hash. The cache directory is
+ * named by SHA-256, so a hit is trusted without re-hashing.
  */
-async function syncInterfacesTree(directory, manifest) {
-  if (!syncInterfaces) return false;
-  const spec = manifest.interfaces;
-  if (!spec?.dir) {
-    console.warn(
-      `${manifest.agdaVersion}: dist-manifest.json has no \`interfaces\` ` +
-        "directory, so same-origin interfaces are unavailable",
-    );
+async function ensureCached(url, sha256, byteLength, label) {
+  const name = path.basename(new URL(url).pathname);
+  const destination = path.join(cacheRoot, sha256, name);
+  if ((await fileSize(destination)) === byteLength) return destination;
+
+  console.log(`Downloading ${label} (${name}) …`);
+  await downloadTo(url, destination);
+
+  const actualBytes = await fileSize(destination);
+  if (actualBytes !== byteLength) {
+    await rm(destination, { force: true });
+    throw new Error(`${label}: downloaded ${actualBytes} bytes, expected ${byteLength}`);
+  }
+  const actualSha = await sha256File(destination);
+  if (actualSha !== sha256) {
+    await rm(destination, { force: true });
+    throw new Error(`${label}: sha256 ${actualSha}, expected ${sha256}`);
+  }
+  return destination;
+}
+
+/** Copy a cached artifact into `static/` under its basename unless it is current. */
+async function publish(source, sha256, byteLength) {
+  const destination = path.join(staticRoot, path.basename(source));
+  if ((await fileSize(destination)) === byteLength && (await sha256File(destination)) === sha256) {
     return false;
   }
-  const destination = path.join(
-    staticRoot,
-    "stdlib-interfaces",
-    manifest.agdaVersion,
-  );
-  const source = path.join(directory, spec.dir);
-  try {
-    await stat(source);
-  } catch {
-    console.warn(
-      `${manifest.agdaVersion}: ${spec.dir} is missing; ` +
-        "same-origin interfaces are unavailable",
-    );
-    return false;
-  }
-  const stampPath = path.join(destination, ".stamp");
-  const stamp = `${spec.dir}:${spec.count ?? ""}:${spec.byteLength ?? ""}`;
-  try {
-    if ((await readFile(stampPath, "utf8")) === stamp) return false;
-  } catch {
-    // Not copied yet.
-  }
-  await rm(destination, { recursive: true, force: true });
-  await copyTree(source, destination);
-  await writeFile(stampPath, stamp);
+  await mkdir(staticRoot, { recursive: true });
+  await copyFile(source, destination);
   return true;
 }
 
-async function readVersion(manifestPath) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  const directory = path.dirname(manifestPath);
+/** Fetch and (when pinned) authenticate a release's dist-manifest.json. */
+async function loadManifest(release) {
+  const url = releaseUrl(release.tag, "dist-manifest.json");
+  if (!release.manifestSha256) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`GET ${url} failed: ${response.status} ${response.statusText}`);
+    }
+    return JSON.parse(await response.text());
+  }
 
-  const wasm = await syncArtifact(
-    path.join(directory, manifest.wasm.path),
+  const cached = path.join(cacheRoot, release.manifestSha256, "dist-manifest.json");
+  if ((await fileSize(cached)) == null) {
+    console.log(`Downloading dist-manifest.json for ${release.tag} …`);
+    await downloadTo(url, cached);
+    const actual = await sha256File(cached);
+    if (actual !== release.manifestSha256) {
+      await rm(cached, { force: true });
+      throw new Error(
+        `dist-manifest.json for ${release.tag} has sha256 ${actual}, ` +
+          `but runtime.manifestSha256 pins ${release.manifestSha256}`,
+      );
+    }
+  }
+  return JSON.parse(await readFile(cached, "utf8"));
+}
+
+/**
+ * Download the standard-library interface archive and extract it into
+ * `static/stdlib-interfaces/<agdaVersion>/`, yielding
+ * `…/<agdaVersion>/src/**\/*.agdai`. Skipped when the extracted tree already
+ * matches the archive hash (a stamp file records it), or when the release does
+ * not publish an archive.
+ */
+async function syncInterfacesTree(release, manifest) {
+  if (!syncInterfaces) return false;
+  const spec = manifest.interfaces;
+  if (!spec?.asset) {
+    console.warn(
+      `${manifest.agdaVersion}: ${release.tag} has no \`interfaces\` archive, ` +
+        "so same-origin interfaces are unavailable",
+    );
+    return false;
+  }
+
+  const destination = path.join(staticRoot, "stdlib-interfaces", manifest.agdaVersion);
+  const stampPath = path.join(destination, ".stamp");
+  const stamp = `${spec.asset}:${spec.sha256}`;
+  if ((await readFile(stampPath, "utf8").catch(() => null)) === stamp) return false;
+
+  const archive = await ensureCached(
+    releaseUrl(release.tag, spec.asset),
+    spec.sha256,
+    spec.byteLength,
+    "standard-library interfaces",
+  );
+  await rm(destination, { recursive: true, force: true });
+  const written = extractZip(await readFile(archive), destination, (name) =>
+    name.startsWith(`${spec.root ?? "src"}/`),
+  );
+  await writeFile(stampPath, stamp);
+  console.log(`Extracted ${written} interface files into ${path.relative(projectRoot, destination)}`);
+  return true;
+}
+
+async function readRelease(release) {
+  const manifest = await loadManifest(release);
+
+  const wasm = await ensureCached(
+    releaseUrl(release.tag, manifest.wasm.path),
+    manifest.wasm.sha256,
     manifest.wasm.byteLength,
     "ALS wasm",
   );
-  const compressed = await syncArtifact(
-    path.join(directory, manifest.wasm.compressedPath),
+  const compressed = await ensureCached(
+    releaseUrl(release.tag, manifest.wasm.compressedPath),
+    manifest.wasm.compressedSha256,
     manifest.wasm.compressedByteLength,
     "compressed ALS wasm",
   );
-  const data = await syncArtifact(
-    path.join(directory, manifest.data.path),
+  const data = await ensureCached(
+    releaseUrl(release.tag, manifest.data.path),
+    manifest.data.sha256,
     manifest.data.byteLength,
     "Agda data archive",
   );
-  const stdlib = await syncArtifact(
-    path.join(directory, manifest.stdlib.path),
+  const stdlib = await ensureCached(
+    releaseUrl(release.tag, manifest.stdlib.path),
+    manifest.stdlib.sha256,
     manifest.stdlib.byteLength,
     "Agda standard library archive",
   );
-  const interfaces = await syncInterfacesTree(directory, manifest);
+
+  const copied = (
+    await Promise.all([
+      publish(wasm, manifest.wasm.sha256, manifest.wasm.byteLength),
+      publish(compressed, manifest.wasm.compressedSha256, manifest.wasm.compressedByteLength),
+      publish(data, manifest.data.sha256, manifest.data.byteLength),
+      publish(stdlib, manifest.stdlib.sha256, manifest.stdlib.byteLength),
+    ])
+  ).filter(Boolean).length;
+  const interfaces = await syncInterfacesTree(release, manifest);
 
   return {
-    manifest,
-    copied: [wasm, compressed, data, stdlib].filter((entry) => entry.copied)
-      .length + (interfaces ? 1 : 0),
+    copied: copied + (interfaces ? 1 : 0),
     entry: {
       agdaVersion: manifest.agdaVersion,
       stdlibVersion: manifest.stdlibVersion,
@@ -230,9 +279,10 @@ function renderManifest(entries) {
 
   return `// Generated by scripts/sync-runtime.mjs. Do not edit by hand.
 //
-// One entry per Agda version shipped under \`vendor/\` (agda-als-dist, one
-// submodule per version branch). \`path\` values are root-relative static asset
-// URLs; the controller applies SvelteKit's base path and a cache-bust suffix.
+// One entry per release pinned in \`runtime.releases\` (agda-als-dist, one
+// GitHub release per Agda version). \`path\` values are root-relative static
+// asset URLs; the controller applies SvelteKit's base path and a cache-bust
+// suffix.
 
 export interface RuntimeDataSpec {
   path: string;
@@ -267,32 +317,31 @@ ${versions}
 `;
 }
 
-await mkdir(staticRoot, { recursive: true });
-
-const manifestPaths = await findDistManifests(vendorRoot, 0);
-if (manifestPaths.length === 0) {
-  console.error(
-    "No vendor/*/dist-manifest.json found. Initialize the runtime submodules " +
-      "with:\n  git submodule update --init --recursive",
-  );
-  process.exit(1);
+function compareVersions(left, right) {
+  const a = left.split(".").map(Number);
+  const b = right.split(".").map(Number);
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const delta = (a[index] ?? 0) - (b[index] ?? 0);
+    if (delta !== 0) return delta;
+  }
+  return 0;
 }
+
+await mkdir(staticRoot, { recursive: true });
 
 const versions = [];
 let copied = 0;
-for (const manifestPath of manifestPaths.sort()) {
-  const version = await readVersion(manifestPath);
-  versions.push(version.entry);
-  copied += version.copied;
+for (const release of runtime.releases.map(normalizeRelease)) {
+  const result = await readRelease(release);
+  versions.push(result.entry);
+  copied += result.copied;
 }
-versions.sort((left, right) =>
-  compareVersions(left.agdaVersion, right.agdaVersion),
-);
+versions.sort((left, right) => compareVersions(left.agdaVersion, right.agdaVersion));
 
 await writeFile(manifestOutput, renderManifest(versions));
 
 console.log(
-  `Synced ${versions.length} Agda runtime version(s) ` +
+  `Synced ${versions.length} Agda runtime release(s) ` +
     `(${versions.map((version) => version.agdaVersion).join(", ")}); ` +
-    `${copied} artifact(s) copied to static/.`,
+    `${copied} artifact(s) updated in static/.`,
 );

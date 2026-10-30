@@ -10,12 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          submodules: recursive
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
+      - name: Cache the runtime download
+        uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: runtime-${{ hashFiles('playground.config.json') }}
+          restore-keys: |
+            runtime-
       - run: npm ci
       - run: npm run check
       - run: npm test

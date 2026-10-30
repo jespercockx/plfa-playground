@@ -20,7 +20,6 @@ content, see
 3. Run it locally:
 
    ```sh
-   git submodule update --init --recursive
    npm ci
    npm run dev
    ```
@@ -67,14 +66,15 @@ pulls in a large part of the library, which takes minutes the first time. The
 instead. Agda itself decides which interface it wants, so only the ones a check
 needs are downloaded, one request per file.
 
-- `{ "mode": "none" }` (default): never fetch; compile from source.
-- `{ "mode": "same-origin" }`: serve the tree from this site under
-  `/stdlib-interfaces/<agdaVersion>/`. `sync:runtime` copies it from the dist
-  submodule when the dist repo publishes it, so the site has to carry the full
-  tree.
-- `{ "mode": "cross-origin", "baseUrl": "https://…" }`: fetch the tree from
-  `baseUrl`, for pointing at the dist repo's published interfaces instead of
-  vendoring them.
+- `{ "mode": "same-origin" }` (default): serve the tree from this site under
+  `/stdlib-interfaces/<agdaVersion>/`. `sync:runtime` downloads the release's
+  interface archive at build time and extracts it, so the site has to carry the
+  full tree.
+- `{ "mode": "none" }`: never fetch; compile from source.
+- `{ "mode": "cross-origin", "baseUrl": "https://…" }`: fetch each interface
+  from `baseUrl` at runtime. `baseUrl` must be a CORS host serving the tree as
+  `<baseUrl>/src/<Module>.agdai`; a GitHub release asset will not work, because
+  release downloads carry no `access-control-allow-origin`.
 
 Interfaces are version-specific: the tree must be built by the same Agda version
 the site ships. A file that is missing or does not match the sources is ignored
@@ -90,10 +90,11 @@ npm run build
 ```
 
 The static site is written to `build/`. The Agda/ALS runtime binaries are not
-stored in Git; `scripts/sync-runtime.mjs` copies them from the
+stored in Git; `scripts/sync-runtime.mjs` downloads them from the
 [`jespercockx/agda-als-dist`](https://github.com/jespercockx/agda-als-dist)
-submodule under `vendor/` before `dev` and `build`. That submodule is pinned to
-the `agda-2.8.0` branch; only Agda 2.8.0 and later are supported.
+release pinned under `runtime` in `playground.config.json` before `dev` and
+`build`, verifying each file against the release's `dist-manifest.json`. Only
+Agda 2.8.0 and later are supported.
 
 ## Limitations
 
