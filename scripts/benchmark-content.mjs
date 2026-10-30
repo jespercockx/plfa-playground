@@ -43,14 +43,11 @@ try {
     '.command-strip button[title^="Normalize"]:not([disabled])',
     { timeout: 180_000 },
   );
-  await page.waitForSelector(".tree-part", { timeout: 10_000 });
+  await page.waitForSelector(".chapter-row", { timeout: 10_000 });
 
-  for (const group of ["PART1", "PART2", "PART3"]) {
-    const button = page.locator(".tree-part").filter({ hasText: group });
-    if (
-      (await button.count()) &&
-      (await button.getAttribute("aria-expanded")) === "false"
-    ) {
+  // Expand any collapsed groups; a flat content root has none.
+  for (const button of await page.locator(".tree-part").all()) {
+    if ((await button.getAttribute("aria-expanded")) === "false") {
       await button.click();
     }
   }
@@ -82,25 +79,25 @@ try {
     };
   }
 
-  const chapterNames = (await page.locator(".chapter-row").allInnerTexts())
-    .map((text) => text.match(/([^\s]+)\.lagda\.md/)?.[1])
+  const chapterLabels = (await page.locator(".chapter-row").allInnerTexts())
+    .map((text) => text.trim())
     .filter(Boolean)
+    .map((label) => ({
+      label,
+      name: label.replace(/\.(?:lagda\.md|agda)$/, ""),
+    }))
     .filter(
-      (chapter) => selectedChapters.size === 0 || selectedChapters.has(chapter),
+      (chapter) =>
+        selectedChapters.size === 0 || selectedChapters.has(chapter.name),
     );
   const results = [];
 
-  for (const chapter of chapterNames) {
-    const row = page
-      .locator(".chapter-row")
-      .filter({ hasText: `${chapter}.lagda.md` });
-    await row.click();
+  for (const { label, name } of chapterLabels) {
+    await page.locator(".chapter-row").filter({ hasText: label }).click();
     await page.waitForFunction(
-      (name) =>
-        document
-          .querySelector(".editor-tab")
-          ?.textContent?.includes(`${name}.lagda.md`),
-      chapter,
+      (expected) =>
+        document.querySelector(".editor-tab")?.textContent?.includes(expected),
+      label,
       { timeout: 10_000 },
     );
     await page.waitForTimeout(300);
@@ -108,11 +105,13 @@ try {
     const initial = await checkCurrentChapter();
     await page.locator(".cm-content").click();
     await page.keyboard.press("Control+End");
-    await page.keyboard.insertText(
-      "\n\n```agda\nprivate\n  browserBenchmarkIdentity : ∀ {A : Set} → A → A\n  browserBenchmarkIdentity x = x\n```\n",
-    );
+    // A literate file needs a fenced block; a plain .agda file does not.
+    const snippet = label.endsWith(".agda")
+      ? "\n\nprivate\n  browserBenchmarkIdentity : ∀ {A : Set} → A → A\n  browserBenchmarkIdentity x = x\n"
+      : "\n\n```agda\nprivate\n  browserBenchmarkIdentity : ∀ {A : Set} → A → A\n  browserBenchmarkIdentity x = x\n```\n";
+    await page.keyboard.insertText(snippet);
     const edited = await checkCurrentChapter();
-    const result = { chapter, initial, edited };
+    const result = { chapter: name, initial, edited };
     results.push(result);
     process.stderr.write(`${JSON.stringify(result)}\n`);
   }
